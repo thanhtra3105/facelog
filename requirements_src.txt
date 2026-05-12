@@ -1,0 +1,28 @@
+# ================================================
+# FaceLog — Requirements cho src/enrollment.py
+#                           src/verification.py
+# Python >= 3.9
+# ================================================
+
+# Deep learning
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Computer vision + webcam
+opencv-python>=4.8.0
+
+# Numerical computing
+numpy>=1.24.0
+
+# ================================================
+# Cách cài:
+#
+#   pip install -r requirements_src.txt
+#
+# Nếu có GPU NVIDIA (khuyến nghị):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#   pip install opencv-python numpy
+#
+# Kiểm tra GPU sau khi cài:
+#   python -c "import torch; print(torch.cuda.is_available())"
+# ================================================
