@@ -20,54 +20,93 @@ from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-import torch
-import torch.nn as nn
-import torchvision.models as models
-import torchvision.transforms as transforms
+import onnxruntime as ort  # <-- THÊM MỚI: Dùng ONNX Runtime thay cho PyTorch
 
+# XÓA HOÀN TOÀN CÁC DÒNG LIÊN QUAN ĐẾN TORCH DƯỚI ĐÂY:
+# import torch
+# import torch.nn as nn
+# import torchvision.models as models
+# import torchvision.transforms as transforms
 
+# ── THÊM MỚI: Hàm tiền xử lý ảnh bằng Numpy (Thay cho transforms của PyTorch) ──
+def preprocess_face_numpy(face_rgb):
+    # Resize về chuẩn 112x112 của ArcFace
+    resized = cv2.resize(face_rgb, (112, 112))
+    # Chuẩn hóa về dải [-1, 1]
+    img_float = (resized.astype(np.float32) / 255.0 - 0.5) / 0.5
+    # Đổi trục từ [H, W, C] sang [C, H, W]
+    img_chw = np.transpose(img_float, (2, 0, 1))
+    # Thêm batch_size ở đầu -> shape: [1, 3, 112, 112]
+    return np.expand_dims(img_chw, axis=0)
 DB_PATH = "face_db.json"
 
 
 # ── Model embedding: giữ nguyên kiến trúc của bạn ─────────────────────────
-class FaceEmbedder(nn.Module):
-    """ResNet-50 backbone — khớp với notebook training."""
+# ── THAY THẾ: Sử dụng ONNX Runtime và Numpy (Sạch bóng PyTorch) ──────────────
+import onnxruntime as ort
 
-    def __init__(self, embedding_dim: int = 512, backbone: str = "resnet50"):
-        super().__init__()
-        if backbone == "resnet50":
-            base = models.resnet50(weights=None)
-            in_features = 2048
-        else:
-            base = models.resnet34(weights=None)
-            in_features = 512
+class MockTensor:
+    """
+    Lớp giả lập Tensor của PyTorch.
+    Giúp 'đánh lừa' các đoạn code phía dưới của enrollment.py để không bị lỗi 
+    khi gọi .unsqueeze(), .cpu(), .numpy(), .detach()
+    """
+    def __init__(self, array):
+        self.array = array
+    def unsqueeze(self, dim):
+        return MockTensor(np.expand_dims(self.array, axis=dim))
+    def to(self, *args, **kwargs):
+        return self
+    def cpu(self):
+        return self
+    def detach(self):
+        return self
+    def numpy(self):
+        return self.array
+    def __getitem__(self, idx):
+        return self.array[idx]
 
-        self.features = nn.Sequential(*list(base.children())[:-2])
-        self.gap = nn.AdaptiveAvgPool2d(1)
-        self.bn1 = nn.BatchNorm2d(in_features)
-        self.drop = nn.Dropout(0.4)
-        self.fc = nn.Linear(in_features, embedding_dim, bias=False)
-        self.bn2 = nn.BatchNorm1d(embedding_dim)
+class FaceEmbedder:
+    """Bộ trích xuất đặc trưng dùng ONNX Runtime (Giao diện giả lập PyTorch)"""
+    def __init__(self, embedding_dim: int = 512, backbone: str = "resnet50", model_path: str = "models/arcface_vggface2.onnx"):
+        if not os.path.exists(model_path):
+            model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), model_path)
+            
+        print(f"[INFO] Enrollment Model (ONNX) đang nạp: {model_path}")
+        self.ort_session = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
 
-    def forward(self, x):
-        x = self.features(x)
-        x = self.bn1(x)
-        x = self.gap(x)
-        x = x.view(x.size(0), -1)
-        x = self.drop(x)
-        x = self.fc(x)
-        x = self.bn2(x)
-        return nn.functional.normalize(x, p=2, dim=1)
+    def forward(self, mock_tensor):
+        input_data = mock_tensor.array
+        ort_outputs = self.ort_session.run(None, {'input': input_data})
+        return MockTensor(ort_outputs[0])
+
+    def __call__(self, mock_tensor):
+        return self.forward(mock_tensor)
+    
+    # ── THÊM 2 HÀM NÀY ĐỂ TRÁNH LỖI PHÍA DƯỚI ────────────────────────
+    def to(self, *args, **kwargs):
+        return self  # Bỏ qua lệnh .to(device) của PyTorch
+        
+    def eval(self):
+        return self
 
 
-transform = transforms.Compose(
-    [
-        transforms.ToPILImage(),
-        transforms.Resize((112, 112)),
-        transforms.ToTensor(),
-        transforms.Normalize([0.5] * 3, [0.5] * 3),
-    ]
-)
+def transform(face_img):
+    """Hàm tiền xử lý ảnh bằng Numpy thay thế hoàn toàn cho torchvision.transforms"""
+    # Nếu code phía dưới truyền vào ảnh dạng PIL Image, chuyển nó về Numpy
+    if not isinstance(face_img, np.ndarray):
+        face_img = np.array(face_img)
+        
+    # Chuẩn hóa kích thước về 112x112 chuẩn ArcFace
+    resized = cv2.resize(face_img, (112, 112))
+    
+    # Chuẩn hóa pixel về dải [-1, 1] (giống mean=[0.5], std=[0.5] của PyTorch)
+    img_float = (resized.astype(np.float32) / 255.0 - 0.5) / 0.5
+    
+    # Đổi trục từ [H, W, C] sang [C, H, W] để khớp định dạng mạng nơ-ron
+    img_chw = np.transpose(img_float, (2, 0, 1))
+    
+    return MockTensor(img_chw)
 
 
 # ── Face detector: ưu tiên YuNet, fallback Haar nếu thiếu model ───────────
@@ -265,13 +304,18 @@ def save_db(db):
         json.dump(db, f, ensure_ascii=False, indent=2)
 
 
-def extract_embedding(model, face_bgr, device):
-    face_rgb = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2RGB)
-    tensor = transform(face_rgb).unsqueeze(0).to(device)
-    with torch.no_grad():
-        emb = model(tensor).cpu().numpy()[0]
-    emb = emb / (np.linalg.norm(emb) + 1e-8)
-    return emb.tolist()
+def extract_embedding(model, face_crop, device):
+    """Trích xuất vector đặc trưng từ khuôn mặt đã cắt bằng ONNX"""
+    # 1. Chuyển đổi không gian màu từ BGR sang RGB
+    face_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
+    
+    # 2. Tiền xử lý ảnh (Hàm transform này đã trả về MockTensor giả lập)
+    tensor = transform(face_rgb).unsqueeze(0)
+    
+    # 3. Đưa qua model ONNX để lấy embedding (MockTensor xử lý hết các hàm .cpu().numpy())
+    emb = model(tensor).cpu().numpy()[0]
+    
+    return emb
 
 
 def draw_ui(frame, scenario_name, instruction, countdown, collected, total, msg, ratio, blur):
@@ -329,7 +373,8 @@ def enroll(
     target_frames: int = 18,
     min_blur: float = 35.0,
 ):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # THAY BẰNG:
+    device = "cpu"
     print(f"[INFO] Device: {device}")
 
     model = load_model(model_path, device)
