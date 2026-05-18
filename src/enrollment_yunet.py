@@ -347,20 +347,23 @@ def draw_ui(frame, scenario_name, instruction, countdown, collected, total, msg,
     return frame
 
 
-def load_model(model_path: str, device):
-    model = FaceEmbedder(embedding_dim=512, backbone="resnet50").to(device)
-    if model_path and os.path.exists(model_path):
-        checkpoint = torch.load(model_path, map_location=device)
-        state_dict = checkpoint.get("model_state_dict", checkpoint)
-        model.load_state_dict(state_dict, strict=False)
-        print(f"[INFO] Loaded weights: {model_path}")
-        print(f"[INFO] Best epoch: {checkpoint.get('best_epoch') if isinstance(checkpoint, dict) else None}, "
-              f"AUC: {checkpoint.get('auc') if isinstance(checkpoint, dict) else None}")
-    else:
-        print("[WARN] Không tìm thấy weights → dùng random weights, chỉ để test UI.")
-    model.eval()
-    return model
-
+# def load_model(model_path: str, device):
+#     model = FaceEmbedder(embedding_dim=512, backbone="resnet50").to(device)
+#     if model_path and os.path.exists(model_path):
+#         checkpoint = torch.load(model_path, map_location=device)
+#         state_dict = checkpoint.get("model_state_dict", checkpoint)
+#         model.load_state_dict(state_dict, strict=False)
+#         print(f"[INFO] Loaded weights: {model_path}")
+#         print(f"[INFO] Best epoch: {checkpoint.get('best_epoch') if isinstance(checkpoint, dict) else None}, "
+#               f"AUC: {checkpoint.get('auc') if isinstance(checkpoint, dict) else None}")
+#     else:
+#         print("[WARN] Không tìm thấy weights → dùng random weights, chỉ để test UI.")
+#     model.eval()
+#     return model
+def load_model(model_path, device):
+    print(f"[INFO] Dùng model ONNX: {model_path}")
+    # Gọi FaceEmbedder (đã được giả lập ONNX) từ file enrollment_yunet
+    return FaceEmbedder(model_path=model_path)
 
 def enroll(
     name: str,
