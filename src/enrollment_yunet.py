@@ -244,7 +244,7 @@ def setup_camera(camera_id: int = 0, width: int = 1280, height: int = 720, fps: 
 SCENARIOS = [
     ("THANG_GAN", "Nhin thang - dua mat GAN camera", (0.26, 0.42), 3.0),
     ("THANG_VUA", "Nhin thang - khoang cach BINH THUONG", (0.16, 0.30), 3.0),
-    ("THANG_XA", "Nhin thang - LUI RA XA camera", (0.08, 0.18), 3.0),
+    ("THANG_XA", "Nhin thang - LUI RA XA camera", (0.14, 0.18), 3.0),
     ("TRAI_VUA", "Quay mat sang TRAI nhe, giu khoang cach vua", (0.13, 0.30), 3.0),
     ("PHAI_VUA", "Quay mat sang PHAI nhe, giu khoang cach vua", (0.13, 0.30), 3.0),
     ("LEN_VUA", "Ngua dau len nhe, giu khoang cach vua", (0.13, 0.30), 3.0),
@@ -431,9 +431,15 @@ def enroll(
                 print("     [REC] Đang thu thập...")
 
         if embeddings_this_scene:
-            mean_emb = np.mean(embeddings_this_scene, axis=0)
-            mean_emb = mean_emb / (np.linalg.norm(mean_emb) + 1e-8)
-            all_embeddings.append(mean_emb.tolist())
+            arr = np.array(embeddings_this_scene)
+            # Tính centroid, lấy top 60% frame gần centroid nhất
+            centroid = arr.mean(axis=0)
+            centroid /= np.linalg.norm(centroid) + 1e-8
+            sims = arr @ centroid
+            top_k = max(3, int(len(arr) * 0.6))
+            top_indices = np.argsort(sims)[-top_k:]
+            for i in top_indices:
+                all_embeddings.append(arr[i].tolist())
             scenario_meta.append(
                 {
                     "name": scene_name,
