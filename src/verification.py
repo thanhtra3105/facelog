@@ -246,6 +246,6 @@ def run_verification(model_path: str = None):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="E:/THANHTRA/KI_8/AI/project/models/arcface_vggface2.pth")
+    parser.add_argument("--model", default="E:/THANHTRA/KI_8/AI/facelog/models/arcface_vggface2.pth")
     args = parser.parse_args()
     run_verification(args.model)
