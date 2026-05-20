@@ -1,4 +1,5 @@
 """
+<<<<<<< HEAD
 verification_yunet.py — Xác thực khuôn mặt realtime bằng YuNet (đã tối ưu pipeline).
 
 Thay đổi so với bản cũ:
@@ -8,6 +9,9 @@ Thay đổi so với bản cũ:
 
 Chạy ví dụ:
   python verification_yunet.py --model models/arcface_vggface2.pth --yunet face_detection_yunet_2023mar.onnx
+=======
+verification_yunet.py — Xác thực khuôn mặt realtime bằng YuNet (Bản chạy ONNX).
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
 """
 
 import argparse
@@ -19,8 +23,13 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+<<<<<<< HEAD
 import torch
 
+=======
+
+# Import các thành phần đã được ONNX-hóa từ enrollment_yunet
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
 from enrollment_yunet import (
     DB_PATH,
     FaceDetector,
@@ -32,8 +41,12 @@ from enrollment_yunet import (
     transform,
 )
 
+<<<<<<< HEAD
 
 # ── Cấu hình mặc định (fallback nếu model không có EER threshold) ──────────
+=======
+# ── Cấu hình mặc định ──────────
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
 THRESHOLD_OPEN    = 0.80
 THRESHOLD_UNSURE  = 0.70
 SMOOTH_WINDOW     = 8
@@ -58,11 +71,14 @@ def cosine_similarity(a, b) -> float:
 
 
 def identify(embedding, db, unsure_threshold: float):
+<<<<<<< HEAD
     """
     So sánh embedding với toàn bộ DB.
     Dùng trung bình top-5 scores thay vì max để tránh bị outlier.
     Trả về (name, best_score).
     """
+=======
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
     if not db:
         return "UNKNOWN", 0.0
 
@@ -78,7 +94,11 @@ def identify(embedding, db, unsure_threshold: float):
             reverse=True,
         )
         top_k = min(5, len(scores))
+<<<<<<< HEAD
         score = float(np.mean(scores[:top_k]))   # top-5 mean, không dùng max
+=======
+        score = float(np.mean(scores[:top_k]))   
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
         if score > best_score:
             best_score = score
             best_name  = name
@@ -90,6 +110,7 @@ def identify(embedding, db, unsure_threshold: float):
 
 def load_threshold_from_model(model_path: str):
     """
+<<<<<<< HEAD
     Đọc EER threshold đã tính sẵn trong notebook từ file .pth.
     Nếu không có thì fallback về giá trị mặc định.
     """
@@ -105,6 +126,11 @@ def load_threshold_from_model(model_path: str):
     except Exception as e:
         print(f"[WARN] Không đọc được threshold từ model: {e}")
 
+=======
+    ONNX không lưu dictionary chứa threshold như .pth, 
+    nên mặc định luôn trả về giá trị cấu hình ở trên.
+    """
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
     print(f"[INFO] Dùng threshold mặc định: open={THRESHOLD_OPEN}, unsure={THRESHOLD_UNSURE}")
     return THRESHOLD_OPEN, THRESHOLD_UNSURE
 
@@ -165,6 +191,7 @@ def draw_verification_ui(frame, name, score, status, door_open, fps, msg=""):
 
 
 def load_model(model_path: str, device):
+<<<<<<< HEAD
     model = FaceEmbedder(embedding_dim=512, backbone="resnet50").to(device)
     if model_path and os.path.exists(model_path):
         checkpoint  = torch.load(model_path, map_location=device)
@@ -180,6 +207,10 @@ def load_model(model_path: str, device):
         print("[WARN] Dùng random weights — chỉ để test UI.")
     model.eval()
     return model
+=======
+    """Khởi tạo FaceEmbedder từ ONNX (đã bỏ phần torch.load)"""
+    return FaceEmbedder(model_path=model_path)
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
 
 
 def run_verification(
@@ -192,11 +223,15 @@ def run_verification(
     threshold_open: float = THRESHOLD_OPEN,
     threshold_unsure: float = THRESHOLD_UNSURE,
 ):
+<<<<<<< HEAD
     # ── Tự động lấy threshold từ model nếu người dùng không truyền tay ──
     # if threshold_open == THRESHOLD_OPEN and threshold_unsure == THRESHOLD_UNSURE:
     #     threshold_open, threshold_unsure = load_threshold_from_model(model_path)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+=======
+    device = "cpu"
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
     print(f"[INFO] Device: {device}")
 
     model    = load_model(model_path, device)
@@ -256,16 +291,27 @@ def run_verification(
                 msg    = f"Anh mo: {bscore:.0f}. Giu yen hoac tang anh sang."
             else:
                 face_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
+<<<<<<< HEAD
                 tensor   = transform(face_rgb).unsqueeze(0).to(device)
                 with torch.no_grad():
                     emb = model(tensor).cpu().numpy()[0]
+=======
+                
+                # Trích xuất đặc trưng với MockTensor + ONNX (Đã bỏ block with torch.no_grad():)
+                tensor   = transform(face_rgb).unsqueeze(0).to(device)
+                emb      = model(tensor).cpu().numpy()[0]
+                
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
                 emb = emb / (np.linalg.norm(emb) + 1e-8)
 
                 raw_name, raw_score = identify(emb, db, threshold_unsure)
                 score_history.append(raw_score)
                 name_history.append(raw_name)
 
+<<<<<<< HEAD
                 # Dùng median thay vì mean → ổn định hơn khi có frame nhiễu
+=======
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
                 smooth_score             = float(np.median(score_history))
                 most_common, same_count  = Counter(name_history).most_common(1)[0]
 
@@ -315,8 +361,13 @@ def run_verification(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+<<<<<<< HEAD
     parser.add_argument("--model",            default="E:/HK8/TTNT/QuangDaAI/facelog/models/arcface_vggface2.pth")
     parser.add_argument("--yunet",            default="E:/HK8/TTNT/QuangDaAI/facelog/models/face_detection_yunet_2023mar.onnx")
+=======
+    parser.add_argument("--model",            default="models/arcface_vggface2.onnx")
+    parser.add_argument("--yunet",            default="face_detection_yunet_2023mar.onnx")
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
     parser.add_argument("--camera",           type=int,   default=0)
     parser.add_argument("--width",            type=int,   default=1280)
     parser.add_argument("--height",           type=int,   default=720)

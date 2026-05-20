@@ -254,6 +254,10 @@ def enroll(name: str, model_path: str = None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", required=True, help="Tên người đăng ký")
+<<<<<<< HEAD
     parser.add_argument("--model", default="E:/HK8/TTNT/QuangDaAI/facelog/models/arcface_vggface2.pth")
+=======
+    parser.add_argument("--model", default="E:/THANHTRA/KI_8/AI/facelog/models/arcface_vggface2.pth")
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
     args = parser.parse_args()
     enroll(args.name, args.model)

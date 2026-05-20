@@ -4,17 +4,31 @@ Chạy: python verification.py
 """
 
 import cv2
-import torch
+# import torch  <-- ĐÃ XÓA
 import numpy as np
 import json
 import os
 import time
 from collections import deque
+import onnxruntime as ort  # <-- THÊM MỚI: Thư viện ONNX
 
 # Import từ enrollment.py
 import sys
 sys.path.append(os.path.dirname(__file__))
-from enrollment import FaceEmbedder, FaceDetector, transform, DB_PATH
+
+# <-- THAY ĐỔI: Bỏ FaceEmbedder và transform, chỉ giữ lại FaceDetector và DB_PATH
+from enrollment import FaceDetector, DB_PATH 
+
+# ── THÊM MỚI: Hàm tiền xử lý ảnh bằng Numpy (Thay cho transform của PyTorch) ──
+def preprocess_face_numpy(face_rgb):
+    # Resize về chuẩn 112x112 của ArcFace
+    resized = cv2.resize(face_rgb, (112, 112))
+    # Chuẩn hóa về dải [-1, 1] (tương đương mean=[0.5], std=[0.5] của PyTorch)
+    img_float = (resized.astype(np.float32) / 255.0 - 0.5) / 0.5
+    # Đổi trục từ [H, W, C] sang [C, H, W]
+    img_chw = np.transpose(img_float, (2, 0, 1))
+    # Thêm batch_size ở đầu -> shape: [1, 3, 112, 112]
+    return np.expand_dims(img_chw, axis=0)
 
 # ── Cấu hình ──────────────────────────────────────────────────────────────
 THRESHOLD_OPEN   = 0.8   # similarity > này → MỞ CỬA
@@ -136,21 +150,14 @@ def draw_verification_ui(frame, name, score, status, door_open, fps):
 
 # ── Main verification loop ─────────────────────────────────────────────────
 def run_verification(model_path: str = None):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[INFO] Device: {device}")
-
-    model = FaceEmbedder(embedding_dim=512, backbone='resnet50').to(device)
-    if model_path and os.path.exists(model_path):
-        # Thành:
-        checkpoint = torch.load(model_path, map_location=device)
-        state_dict = checkpoint['model_state_dict']
-        model.load_state_dict(state_dict, strict=False)
-        print(f"[INFO] Loaded weights: {model_path}")
-        print(f"[INFO] Best epoch: {checkpoint.get('best_epoch')}, AUC: {checkpoint.get('auc')}")
-        print(f"[INFO] Loaded: {model_path}")
-    else:
-        print("[WARN] Dùng random weights — chỉ để test UI")
-    model.eval()
+# ── KHỞI TẠO ONNX ──────────────────────────────────────────────
+    if not model_path or not os.path.exists(model_path):
+        print(f"[ERROR] Không tìm thấy file ONNX tại: {model_path}")
+        return
+        
+    print(f"[INFO] Đang nạp model ONNX từ: {model_path} ...")
+    ort_session = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
+    print("[INFO] Nạp model ONNX thành công!")
 
     detector  = FaceDetector()
     db        = load_db()
@@ -191,10 +198,14 @@ def run_verification(model_path: str = None):
 
             face_crop = detector.crop(frame, biggest)
             face_rgb  = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
-            tensor    = transform(face_rgb).unsqueeze(0).to(device)
+            
+            # 1. Tiền xử lý ảnh bằng hàm Numpy vừa tạo ở đầu file
+            input_data = preprocess_face_numpy(face_rgb)
 
-            with torch.no_grad():
-                emb = model(tensor).cpu().numpy()[0]
+            # 2. Đưa qua ONNX để lấy vector đặc trưng (embedding)
+            # Tên 'input' phải khớp với tên cổng vào lúc nãy bạn export
+            ort_outputs = ort_session.run(None, {'input': input_data})
+            emb = ort_outputs[0][0]
 
             name, score = identify(emb, db)
 
@@ -241,11 +252,13 @@ def run_verification(model_path: str = None):
 
     cap.release()
     cv2.destroyAllWindows()
-
-
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
+<<<<<<< HEAD
     parser.add_argument("--model", default="E:/HK8/TTNT/QuangDaAI/facelog/models/arcface_vggface2.pth")
+=======
+    parser.add_argument("--model", default="D:\Tri_tue_nhan_tao\AI_Projects\facelog\models\arcface_vggface2.pth")
+>>>>>>> 99e8aaaca1eb744e4c4e342ea4dc443751e798ac
     args = parser.parse_args()
     run_verification(args.model)
