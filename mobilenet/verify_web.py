@@ -44,7 +44,93 @@ DEFAULT_THRESHOLD = 0.85
 PIN_RELAY    = 23
 PIN_LED_OK   = 24
 PIN_LED_FAIL = 25
+_PAUSE_IMG_BASE = None  # 
 
+def draw_local_ui(frame, bbox, name, sim, state, fps, dist_mm, sensor_present):
+    """UI d?y d? cho local display """
+    h, w = frame.shape[:2]
+    canvas = np.zeros((h, w, 3), dtype=np.uint8)
+
+    # -- Copy frame
+    vid_h = int(h * 0.72)
+    vid_w = w
+    resized = cv2.resize(frame, (vid_w, vid_h))
+    canvas[:vid_h, :vid_w] = resized
+
+    # -- V? bbox
+    if bbox:
+        x, y, bw, bh = bbox
+        sx = vid_w / frame.shape[1]
+        sy = vid_h / frame.shape[0]
+        color = {"ok":(0,220,120),"deny":(40,40,220),
+                 "detecting":(0,200,255)}.get(state,(180,180,180))
+        cv2.rectangle(canvas,
+                      (int(x*sx), int(y*sy)),
+                      (int((x+bw)*sx), int((y+bh)*sy)), color, 2)
+
+    # -- T
+    color = {"ok":(0,220,120),"deny":(40,40,220),
+             "detecting":(0,200,255),"idle":(180,180,180)}.get(state,(180,180,180))
+    cv2.rectangle(canvas, (0,0), (w,44), (20,20,20), -1)
+    if state == "ok":     label = f"OK  {name}  sim={sim:.3f}"
+    elif state == "deny": label = f"TU CHOI  sim={sim:.3f}"
+    elif state == "detecting": label = "DANG NHAN DIEN..."
+    else:                 label = "NHIN VAO CAMERA"
+    cv2.putText(canvas, label, (12,30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.75, color, 2, cv2.LINE_AA)
+
+    # 
+    clock = time.strftime("%H:%M:%S")
+    cv2.putText(canvas, clock, (w-130, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (160,160,160), 1)
+
+    # Sensor badge 
+    badge_text = "? Co nguoi" if sensor_present else "? Khong co nguoi"
+    badge_color = (0,200,100) if sensor_present else (100,100,100)
+    cv2.putText(canvas, badge_text, (w-220, vid_h-10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, badge_color, 1)
+
+    # FPS + dist 
+    dist_str = f"{dist_mm}mm" if dist_mm > 0 else "--"
+    cv2.putText(canvas, f"FPS:{fps:.1f}  dist:{dist_str}",
+                (10, vid_h-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (120,120,120), 1)
+
+    # -- Panel du?i: 4 card -----------------------
+    panel_y = vid_h
+    panel_h = h - vid_h
+    cv2.rectangle(canvas, (0, panel_y), (w, h), (17,17,17), -1)
+
+    #
+    cv2.line(canvas, (0, panel_y), (w, panel_y), (40,40,40), 1)
+
+    def draw_card(x, y, cw, ch, label, value, val_color=(220,220,220)):
+        cv2.rectangle(canvas, (x+3,y+3), (x+cw-3,y+ch-3), (28,28,28), -1)
+        cv2.rectangle(canvas, (x+3,y+3), (x+cw-3,y+ch-3), (45,45,45), 1)
+        cv2.putText(canvas, label, (x+10, y+22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.38, (100,100,100), 1)
+        cv2.putText(canvas, value, (x+10, y+ch-12),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, val_color, 1)
+
+    cw = w // 4
+    ch = panel_h
+
+    # Card 1: 
+    state_color = {"ok":(0,220,120),"deny":(40,40,220),
+                   "detecting":(0,200,255),"idle":(100,100,100)}.get(state,(180,180,180))
+    draw_card(0,       panel_y, cw, ch, "TRANG THAI", state.upper(), state_color)
+
+    # Card 2: 
+    draw_card(cw,      panel_y, cw, ch, "TEN NHAN DIEN", name or "--")
+
+    # Card 3: Similarity
+    sim_str = f"{sim:.3f}" if sim > 0 else "--"
+    draw_card(cw*2,    panel_y, cw, ch, "SIMILARITY", sim_str)
+
+    #
+    draw_card(cw*3,    panel_y, cw, ch, "KHOANG CACH", dist_str)
+
+    return canvas
+    
 def has_display() -> bool:
     """Kiem tra co man hinh khong."""
     import os
@@ -481,13 +567,16 @@ def inference_loop(args):
             else:
                 state="idle"; show_bbox=None
 
-        draw_overlay(frame, show_bbox, show_name, show_sim, state, fps_display, dist_mm)
-
         if USE_LOCAL_DISPLAY:
-            cv2.imshow("FaceLog", frame)
+            with _lock:
+                sensor_present = _shared["sensor_present"]
+            ui = draw_local_ui(frame, show_bbox, show_name, show_sim,
+                               state, fps_display, dist_mm, sensor_present)
+            cv2.imshow("FaceLog", ui)
             if cv2.waitKey(1) == 27:  # ESC thoat
                 break
         else:
+            draw_overlay(frame, show_bbox, show_name, show_sim, state, fps_display, dist_mm)
             ok, buf = cv2.imencode(".jpg", frame, encode_param)
             if ok:
                 with _lock:
@@ -500,6 +589,7 @@ def inference_loop(args):
                             "fps":      round(fps_display, 1),
                             "last_log": new_log,
                         })
+
 
 
 # ──────────────────────────────────────────────
@@ -542,7 +632,7 @@ def main():
     p.add_argument("--no-gpio",          action="store_true")
     p.add_argument("--no-sensor",        action="store_true",
                    help="Tat VL53L0X, chay lien tuc (de test)")
-    p.add_argument("--unlock-duration",  type=float, default=3.0)
+    p.add_argument("--unlock-duration",  type=float, default=5.0)
     p.add_argument("--cooldown",         type=float, default=2.0)
     p.add_argument("--score-threshold",  type=float, default=0.82)
     p.add_argument("--infer-every",      type=int,   default=6)
