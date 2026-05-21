@@ -45,9 +45,9 @@ YUNET_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection
 YUNET_PATH = BASE_DIR / "face_detection_yunet_2023mar.onnx"
 IMG_SIZE = 112
 DEFAULT_THRESHOLD = 0.9
-PIN_RELAY = 17
-PIN_LED_OK = 27
-PIN_LED_FAIL = 22
+PIN_RELAY = 23
+PIN_LED_OK = 24
+PIN_LED_FAIL = 25
 
 
 def ensure_yunet(path: Path):
@@ -276,7 +276,9 @@ def main():
     if not args.no_preview:
         cv2.namedWindow("Door Verification YuNet MobileFaceNet", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("Door Verification YuNet MobileFaceNet", args.width, args.height)
-
+    fps_start = time.time()
+    fps_count = 0
+    fps_display = 0.0
     print("\n[START] Verification dang chay. q/ESC de thoat.\n")
     frame_count = 0; infer_every = 6; last_verify = 0.0
     state="idle"; show_until=0.0; show_name=None; show_sim=0.0; show_bbox=None
@@ -286,6 +288,11 @@ def main():
             if not ret or frame is None:
                 time.sleep(0.03); continue
             frame = cv2.flip(frame, 1)
+            fps_count += 1
+            if fps_count >= 10:
+                fps_display = fps_count / (time.time() - fps_start)
+                fps_start = time.time()
+                fps_count = 0
             frame_count += 1; now = time.time()
             if now > show_until and state in ("ok","deny"):
                 state="idle"; show_name=None; show_bbox=None; show_sim=0.0
@@ -307,6 +314,8 @@ def main():
                         last_verify = now
                 else:
                     state="idle"; show_bbox=None
+            if frame_count % 30 == 0:
+                print(f"[FPS] {fps_display:.1f}")
             if not args.no_preview:
                 vis = frame.copy(); draw_overlay(vis, show_bbox, show_name, show_sim, state)
                 cv2.imshow("Door Verification YuNet MobileFaceNet", vis)
