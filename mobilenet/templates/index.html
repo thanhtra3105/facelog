@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FaceLog — Verify</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap');
+
+:root {
+  --bg:        #0a0a0a;
+  --surface:   #111111;
+  --border:    #1e1e1e;
+  --text:      #c8c8c8;
+  --muted:     #444;
+  --accent:    #c0392b;
+  --ok:        #27ae60;
+  --deny:      #c0392b;
+  --detecting: #e67e22;
+  --mono:      'Share Tech Mono', monospace;
+  --sans:      'Rajdhani', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  gap: 12px;
+}
+
+/* ── Header ── */
+header {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.brand {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 4px;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.brand span { color: var(--muted); font-weight: 400; }
+#header-clock {
+  font-family: var(--mono);
+  font-size: .85rem;
+  color: var(--muted);
+  letter-spacing: 2px;
+}
+
+/* ── Stream wrapper ── */
+#wrap {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #000;
+}
+#stream {
+  width: 100%;
+  display: block;
+  min-height: 200px;
+  object-fit: contain;   /* thêm dòng này */
+  background: #000;      /* thêm dòng này để 2 bên đen thay vì trắng */
+}
+/* Sensor badge — góc trên phải */
+#sensor-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 3px 10px;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: .7rem;
+  font-weight: bold;
+  pointer-events: none;
+  border: 1px solid transparent;
+  transition: all .3s;
+}
+#sensor-badge.present {
+  background: #0d2b1a;
+  border-color: #1a5c35;
+  color: #4ade80;
+}
+#sensor-badge.absent {
+  background: #1a1a1a;
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+#stream-clock {
+  position: absolute;
+  bottom: 54px;        /* đẩy lên trên stream-date */
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 2rem;     /* to hơn */
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 0 12px rgba(0,0,0,1), 0 2px 6px rgba(0,0,0,1);
+  pointer-events: none;
+  letter-spacing: 4px;
+  display: none;       /* ẩn mặc định */
+}
+#stream-date {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: .75rem;
+  color: rgba(48, 43, 43, 0.6);
+  text-shadow: 0 1px 3px rgba(0,0,0,1);
+  pointer-events: none;
+  letter-spacing: 2px;
+  display: none;       /* ẩn mặc định */
+}
+/* ── Status grid ── */
+#status {
+  width: 100%;
+  max-width: 640px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+.card .lbl {
+  font-family: var(--mono);
+  font-size: .6rem;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.card .val {
+  font-family: var(--sans);
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.card .val.ok       { color: var(--ok); }
+.card .val.deny     { color: var(--deny); }
+.card .val.detecting{ color: var(--detecting); }
+.card .val.paused   { color: var(--muted); }
+.card .val.idle     { color: var(--muted); }
+
+/* card trạng thái — chiếm full width */
+.card.wide {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.card.wide .val { font-size: 1.05rem; }
+#state-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+  transition: background .3s;
+}
+#state-dot.ok       { background: var(--ok);       box-shadow: 0 0 6px var(--ok); }
+#state-dot.deny     { background: var(--deny);     box-shadow: 0 0 6px var(--deny); }
+#state-dot.detecting{ background: var(--detecting);box-shadow: 0 0 6px var(--detecting); animation: blink .6s infinite; }
+
+@keyframes blink {
+  0%,100% { opacity:1 } 50% { opacity:.3 }
+}
+
+/* ── Log ── */
+#log-wrap {
+  width: 100%;
+  max-width: 640px;
+}
+.log-label {
+  font-family: var(--mono);
+  font-size: .6rem;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+#log {
+  background: #0d0d0d;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: .7rem;
+  height: 90px;
+  overflow-y: auto;
+  color: var(--muted);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+#log div { padding: 1px 0; border-bottom: 1px solid #181818; }
+#log div:last-child { border-bottom: none; }
+#log .log-ok   { color: #27ae60; }
+#log .log-deny { color: #c0392b; }
+#log .log-sensor { color: #555; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">Face<span>log</span> &nbsp;/&nbsp; VERIFY</div>
+  <div id="header-clock">--:--:--</div>
+</header>
+
+<div id="wrap">
+  <img id="stream" src="/video_feed" alt="stream">
+  <div id="sensor-badge" class="absent">&#x25CF; Không có người</div>
+  <div id="stream-clock">--:--:--</div>
+  <div id="stream-date">-- --- ----</div>
+</div>
+
+<div id="status">
+  <!-- Hàng 1: trạng thái full width -->
+  <div class="card wide">
+    <div id="state-dot"></div>
+    <div>
+      <div class="lbl">Trạng thái</div>
+      <div class="val" id="v-state">—</div>
+    </div>
+    <div style="margin-left:auto;text-align:right">
+      <div class="lbl">Tên nhận diện</div>
+      <div class="val" id="v-name">—</div>
+    </div>
+  </div>
+  <!-- Hàng 2: 3 thẻ -->
+  <div class="card">
+    <div class="lbl">Similarity</div>
+    <div class="val" id="v-sim">—</div>
+  </div>
+  <div class="card">
+    <div class="lbl">Khoảng cách</div>
+    <div class="val" id="v-dist">—</div>
+  </div>
+  <div class="card">
+    <div class="lbl">FPS</div>
+    <div class="val" id="v-fps">—</div>
+  </div>
+</div>
+
+<div id="log-wrap">
+  <div class="log-label">&#x25B6; Event log</div>
+  <div id="log"></div>
+</div>
+
+<script>
+let lastLog = null;
+
+// ── Đồng hồ ──────────────────────────────────
+function updateClock() {
+  const now   = new Date();
+  const hms   = now.toLocaleTimeString('vi-VN', {hour12: false});
+  const days  = ['CN','T2','T3','T4','T5','T6','T7'];
+  const months= ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const date  = `${days[now.getDay()]} ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+
+  document.getElementById('stream-clock').textContent = hms;
+  document.getElementById('stream-date').textContent  = date;
+  document.getElementById('header-clock').textContent = hms;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Polling status ────────────────────────────
+function poll() {
+  fetch('/status').then(r => r.json()).then(d => {
+    const paused = d.paused;
+    // Thêm vào trong hàm poll(), sau phần xử lý sensor badge
+    const showClock = paused;
+    document.getElementById('stream-clock').style.display = showClock ? 'block' : 'none';
+    document.getElementById('stream-date').style.display  = showClock ? 'block' : 'none';
+    // Sensor badge
+    const badge = document.getElementById('sensor-badge');
+    if (d.sensor_present) {
+      badge.textContent = '● Có người';
+      badge.className = 'present';
+    } else {
+      badge.textContent = '● Không có người';
+      badge.className = 'absent';
+    }
+
+    // State
+    const stateText = paused ? 'Paused' : (d.state || 'idle');
+    const stateClass = paused ? 'paused' : (d.state || 'idle');
+    const sv = document.getElementById('v-state');
+    sv.textContent = stateText;
+    sv.className = 'val ' + stateClass;
+    document.getElementById('state-dot').className = stateClass;
+
+    // Name
+    document.getElementById('v-name').textContent = d.name || '—';
+
+    // Sim
+    document.getElementById('v-sim').textContent =
+      d.sim > 0 ? d.sim.toFixed(3) : '—';
+
+    // Distance
+    document.getElementById('v-dist').textContent =
+      d.distance_mm > 0 ? d.distance_mm + ' mm' : '—';
+
+    // FPS
+    document.getElementById('v-fps').textContent =
+      paused ? '0.0' : d.fps.toFixed(1);
+
+    // Log
+    if (d.last_log && d.last_log !== lastLog) {
+      lastLog = d.last_log;
+      const el  = document.getElementById('log');
+      const row = document.createElement('div');
+      const t   = new Date().toLocaleTimeString('vi-VN', {hour12: false});
+      row.textContent = t + '  ' + d.last_log;
+      if (d.last_log.startsWith('[OK]'))     row.className = 'log-ok';
+      if (d.last_log.startsWith('[DENY]'))   row.className = 'log-deny';
+      if (d.last_log.startsWith('[SENSOR]')) row.className = 'log-sensor';
+      el.appendChild(row);
+      el.scrollTop = el.scrollHeight;
+    }
+  }).catch(() => {});
+
+  setTimeout(poll, 400);
+}
+poll();
+</script>
+</body>
+</html>

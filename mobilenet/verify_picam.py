@@ -195,7 +195,7 @@ def open_camera(camera, width, height, fps, use_usb_camera):
                 def read(self):
                     rgb = self.picam2.capture_array()
                     if rgb is None: return False, None
-                    return True, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+                    return True, cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
                 def release(self): self.picam2.stop()
             return PiCamWrap()
         except Exception as e:
