@@ -22,7 +22,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 from flask import Flask, Response, jsonify, render_template
-
+import os
+os.environ["QT_QPA_PLATFORM"] = "xcb"  
 try:
     from ai_edge_litert.interpreter import Interpreter
 except ImportError:
@@ -39,11 +40,25 @@ DB_PATH    = BASE_DIR / "face_database.json"
 YUNET_URL  = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
 YUNET_PATH = BASE_DIR / "face_detection_yunet_2023mar.onnx"
 IMG_SIZE   = 112
-DEFAULT_THRESHOLD = 0.9
-PIN_RELAY    = 17
-PIN_LED_OK   = 27
-PIN_LED_FAIL = 22
+DEFAULT_THRESHOLD = 0.85
+PIN_RELAY    = 23
+PIN_LED_OK   = 24
+PIN_LED_FAIL = 25
 
+def has_display() -> bool:
+    """Kiem tra co man hinh khong."""
+    import os
+    # Linux: kiem tra DISPLAY env var
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        try:
+            cv2.namedWindow("_test", cv2.WINDOW_NORMAL)
+            cv2.destroyWindow("_test")
+            return True
+        except:
+            return False
+    return False
+
+USE_LOCAL_DISPLAY = has_display()
 
 def ensure_yunet(path):
     if path.exists() and path.stat().st_size > 100_000: return
@@ -389,26 +404,38 @@ def inference_loop(args):
     fps_display = 0.0
 
     print(f"[INFO] Inference loop start. infer_every={infer_every}")
-
+    if USE_LOCAL_DISPLAY:
+        cv2.namedWindow("FaceLog", cv2.WINDOW_NORMAL)
+        cv2.moveWindow("FaceLog", 0, 0)
+        cv2.setWindowProperty("FaceLog", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        print("[INFO] Local display fullscreen")
     while True:
         # ── Đọc trạng thái pause từ sensor_loop ──
         with _lock:
             paused  = _shared["paused"]
             dist_mm = _shared["distance_mm"]
 
+        # M?I
         if paused:
-            with _lock:
-                _jpeg_frame    = _PAUSE_FRAME
-                _shared["fps"] = 0.0
-                # ✅ Reset state về idle khi pause để web hiển thị đúng
-                _shared["state"] = "idle"
-                _shared["name"]  = ""
-                _shared["sim"]   = 0.0
-            time.sleep(0.2)
+            if USE_LOCAL_DISPLAY:
+                pause_img = cv2.imdecode(
+                    np.frombuffer(_PAUSE_FRAME, np.uint8), cv2.IMREAD_COLOR)
+                if pause_img is not None:
+                    cv2.imshow("FaceLog", pause_img)
+                    cv2.waitKey(200)
+            else:
+                with _lock:
+                    _jpeg_frame      = _PAUSE_FRAME
+                    _shared["fps"]   = 0.0
+                    _shared["state"] = "idle"
+                    _shared["name"]  = ""
+                    _shared["sim"]   = 0.0
+                time.sleep(0.2)
+            # Reset chung 
             state = "idle"; show_name = None; show_bbox = None
             show_sim = 0.0; last_verify = 0.0
             fps_t0 = time.time(); fps_count = 0
-            continue
+            continue   
 
         # ── Active: đọc frame ───────────────────
         ret, frame = cap.read()
@@ -455,21 +482,24 @@ def inference_loop(args):
                 state="idle"; show_bbox=None
 
         draw_overlay(frame, show_bbox, show_name, show_sim, state, fps_display, dist_mm)
-        ok, buf = cv2.imencode(".jpg", frame, encode_param)
-        if ok:
-            with _lock:
-                # ✅ FIX 3: KHÔNG bao giờ ghi "paused" ở đây
-                # Chỉ update nếu sensor_loop chưa kịp pause lại
-                if not _shared["paused"]:
-                    _jpeg_frame = buf.tobytes()
-                    _shared.update({
-                        # "paused" bị bỏ hoàn toàn — sensor_loop quản lý
-                        "state":    state,
-                        "name":     show_name or "",
-                        "sim":      round(show_sim, 4),
-                        "fps":      round(fps_display, 1),
-                        "last_log": new_log,
-                    })
+
+        if USE_LOCAL_DISPLAY:
+            cv2.imshow("FaceLog", frame)
+            if cv2.waitKey(1) == 27:  # ESC thoat
+                break
+        else:
+            ok, buf = cv2.imencode(".jpg", frame, encode_param)
+            if ok:
+                with _lock:
+                    if not _shared["paused"]:
+                        _jpeg_frame = buf.tobytes()
+                        _shared.update({
+                            "state":    state,
+                            "name":     show_name or "",
+                            "sim":      round(show_sim, 4),
+                            "fps":      round(fps_display, 1),
+                            "last_log": new_log,
+                        })
 
 
 # ──────────────────────────────────────────────
@@ -536,21 +566,20 @@ def main():
     else:
         sensor = VL53L0XSensor(detect_distance_mm=args.detect_distance)
 
-    # Thread 1: sensor polling — CHỦ của _shared["paused"]
     ts = threading.Thread(
         target=sensor_loop,
         args=(sensor, args.no_sensor, args.sensor_hold, args.sensor_poll),
         daemon=True)
     ts.start()
 
-    # Thread 2: inference + camera — chỉ ĐỌC _shared["paused"]
-    ti = threading.Thread(target=inference_loop, args=(args,), daemon=True)
-    ti.start()
-
-    print(f"\n[WEB] Mo browser: http://<PI_IP>:{args.port}")
-    print(f"[INFO] Nguong cam bien: {args.detect_distance}mm  hold: {args.sensor_hold}s\n")
-    app.run(host=args.host, port=args.port, threaded=True, use_reloader=False)
-
+    if USE_LOCAL_DISPLAY:
+        print("[INFO] Co man hinh -> Local display mode")
+        inference_loop(args)          # chay main thread (b?t bu?c v?i imshow)
+    else:
+        print(f"[WEB] Mo browser: http://<PI_IP>:{args.port}")
+        ti = threading.Thread(target=inference_loop, args=(args,), daemon=True)
+        ti.start()
+        app.run(host=args.host, port=args.port, threaded=True, use_reloader=False)
 
 if __name__ == "__main__":
     main()
