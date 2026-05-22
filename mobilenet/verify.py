@@ -57,7 +57,7 @@ def draw_local_ui(frame, bbox, name, sim, state, fps, dist_mm, sensor_present):
     resized = cv2.resize(frame, (vid_w, vid_h))
     canvas[:vid_h, :vid_w] = resized
 
-    # -- 
+    # -- V? bbox
     if bbox:
         x, y, bw, bh = bbox
         sx = vid_w / frame.shape[1]
@@ -389,66 +389,26 @@ _shared = {
 _PAUSE_FRAME: bytes = b""
 
 def _make_pause_frame(w: int, h: int, image_path: str = "image.png") -> bytes:
-    global _PAUSE_IMG_BASE
+    # Thử load ảnh từ file nếu có
     if image_path:
-        img_orig = cv2.imread(image_path)
-        if img_orig is not None:
-            # Logo chi?m ~55% chi?u cao, gi? t? l?
-            logo_h = int(h * 0.55)
-            logo_w = int(logo_h * img_orig.shape[1] / img_orig.shape[0])
-            logo = cv2.resize(img_orig, (logo_w, logo_h))
-            # Canvas n?n tr?ng
-            canvas = np.full((h, w, 3), 240, dtype=np.uint8)
-            y0 = int(h * 0.04)
-            x0 = (w - logo_w) // 2
-            canvas[y0:y0+logo_h, x0:x0+logo_w] = logo
-            _PAUSE_IMG_BASE = canvas.copy()     # 
-            _, buf = cv2.imencode(".jpg", canvas, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        img = cv2.imread(image_path)
+        if img is not None:
+            img = cv2.resize(img, (w, h))
+            _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
             return buf.tobytes()
-    # 
-    img = np.full((h, w, 3), 240, dtype=np.uint8)
-    _PAUSE_IMG_BASE = img.copy()
+        else:
+            print(f"[WARN] Khong load duoc anh: {image_path}, dung nen den")
+
+    # Fallback: nền đen như cũ
+    img = np.zeros((h, w, 3), dtype=np.uint8)
+    cv2.putText(img,"Waiting for person...",(w//2-160,h//2-10),
+                cv2.FONT_HERSHEY_SIMPLEX,0.75,(60,60,60),2)
+    cv2.putText(img,"(VL53L0X paused)",(w//2-110,h//2+24),
+                cv2.FONT_HERSHEY_SIMPLEX,0.5,(40,40,40),1)
     _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 40])
     return buf.tobytes()
 
-def _make_pause_frame_with_clock(w: int, h: int) -> np.ndarray:
-    global _PAUSE_IMG_BASE
-    if _PAUSE_IMG_BASE is not None:
-        img = _PAUSE_IMG_BASE.copy()
-    else:
-        img = np.zeros((h, w, 3), dtype=np.uint8)
 
-    clock = time.strftime("%H:%M:%S")
-    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satuday", "Sunday"]
-    t = time.localtime()
-    date = f"{day_names[t.tm_wday]},  {t.tm_mday:02d}/{t.tm_mon:02d}/{t.tm_year}"
-
-    font = cv2.FONT_HERSHEY_SIMPLEX
-
-    logo_zone_bottom = int(h * 0.62)   #
-
-    clock_scale = w / 640 * 2.2
-    date_scale  = w / 640 * 0.75
-
-    (cw, ch), _ = cv2.getTextSize(clock, font, clock_scale, 3)
-    (dw, dh), _ = cv2.getTextSize(date,  font, date_scale,  2)
-
-    cx_clock = (w - cw) // 2
-    cy_clock = logo_zone_bottom + ch + int(h * 0.04)
-
-    cx_date  = (w - dw) // 2
-    cy_date  = cy_clock + int(h * 0.07)
-
-    # 
-    cv2.putText(img, clock, (cx_clock, cy_clock), font, clock_scale, (0, 0, 0),    8, cv2.LINE_AA)
-    cv2.putText(img, clock, (cx_clock, cy_clock), font, clock_scale, (30, 30, 30), 3, cv2.LINE_AA)
-
-    # Ng
-    cv2.putText(img, date, (cx_date, cy_date), font, date_scale, (0, 0, 0),       5, cv2.LINE_AA)
-    cv2.putText(img, date, (cx_date, cy_date), font, date_scale, (100, 100, 200), 2, cv2.LINE_AA)
-
-    return img
-    
 # ──────────────────────────────────────────────
 # Sensor polling thread
 # ──────────────────────────────────────────────
@@ -544,12 +504,12 @@ def inference_loop(args):
         # M?I
         if paused:
             if USE_LOCAL_DISPLAY:
-                #
-                pause_img = _make_pause_frame_with_clock(args.width, args.height)
-                cv2.imshow("FaceLog", pause_img)
-                cv2.waitKey(200)
+                pause_img = cv2.imdecode(
+                    np.frombuffer(_PAUSE_FRAME, np.uint8), cv2.IMREAD_COLOR)
+                if pause_img is not None:
+                    cv2.imshow("FaceLog", pause_img)
+                    cv2.waitKey(200)
             else:
-                # Web: 
                 with _lock:
                     _jpeg_frame      = _PAUSE_FRAME
                     _shared["fps"]   = 0.0
@@ -557,6 +517,7 @@ def inference_loop(args):
                     _shared["name"]  = ""
                     _shared["sim"]   = 0.0
                 time.sleep(0.2)
+            # Reset chung 
             state = "idle"; show_name = None; show_bbox = None
             show_sim = 0.0; last_verify = 0.0
             fps_t0 = time.time(); fps_count = 0
