@@ -662,8 +662,6 @@ def draw_overlay(frame, bbox, name, sim, state, fps, dist_mm):
 def inference_loop(args):
     global _latest_jpeg, _shared
 
-    pause_frame = create_pause_jpeg(args.width, args.height, "NO PERSON")
-
     gpio = DoorGPIO(enabled=not args.no_gpio)
 
     print("[INFO] Loading YuNet...")
@@ -712,7 +710,6 @@ def inference_loop(args):
 
         if paused:
             with _lock:
-                _latest_jpeg = pause_frame
                 _shared["state"] = "idle"
                 _shared["name"] = ""
                 _shared["sim"] = 0.0

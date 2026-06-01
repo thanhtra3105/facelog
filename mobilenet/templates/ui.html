@@ -218,12 +218,6 @@ body {
                 <div id="video-clock" class="font-mono text-xl font-bold">--:--:--</div>
             </div>
 
-            <!-- Bottom right raw status mini -->
-            <pre
-                id="status-box"
-                class="absolute right-4 bottom-4 max-w-[180px] max-h-[120px] overflow-hidden bg-black/70 text-white text-[10px] p-2 rounded-sm text-left"
-            >loading...</pre>
-
             <!-- Fullscreen button -->
             <button
                 id="fullscreen-btn"
@@ -433,11 +427,6 @@ function setRecognitionInfo(s) {
     const fpsText = document.getElementById('fps-text');
     const latencyText = document.getElementById('latency-text');
     const sensorText = document.getElementById('sensor-text');
-    const statusBox = document.getElementById('status-box');
-
-    if (statusBox) {
-        statusBox.textContent = JSON.stringify(s, null, 2);
-    }
 
     if (fpsText) {
         fpsText.textContent = s.fps ?? '--';
