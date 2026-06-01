@@ -3,16 +3,16 @@
 verify_web.py
 
 Verify khuon mat + stream MJPEG len web browser qua Flask.
-Dung MobileFaceNet TFLite Kaggle: output_model.tflite
+Ban nay da BO HOAN TOAN cam bien khoang cach VL53L0X.
 
-Chay test khong GPIO, khong sensor:
-    python3 verify_web.py --no-gpio --no-sensor
+Chay test khong GPIO:
+    python3 verify_web.py --no-gpio
 
 Chay voi USB camera:
-    python3 verify_web.py --use-usb-camera --camera 0 --no-gpio --no-sensor
+    python3 verify_web.py --use-usb-camera --camera 0 --no-gpio
 
 Chay voi Pi Camera CSI:
-    python3 verify_web.py --no-gpio --no-sensor
+    python3 verify_web.py --no-gpio
 
 Mo browser:
     http://<PI_IP>:5000
@@ -31,7 +31,6 @@ import numpy as np
 from flask import Flask, Response, jsonify
 
 
-# Neu co dung local display OpenCV tren Linux
 os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 
@@ -54,176 +53,22 @@ except ImportError:
 # =========================
 BASE_DIR = Path(__file__).resolve().parent
 
-# Model Kaggle ban gui
 MODEL_PATH = BASE_DIR / "output_model.tflite"
-
-# Database embedding
 DB_PATH = BASE_DIR / "face_database.json"
 
-# YuNet face detector
 YUNET_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
 YUNET_PATH = BASE_DIR / "face_detection_yunet_2023mar.onnx"
 
-# MobileFaceNet Kaggle model:
-# input  [1,112,112,3] float32
-# output [1,128] float32
-IMG_SIZE = 112
-
-# Threshold nen test tu 0.55 truoc
 DEFAULT_THRESHOLD = 0.55
 
-# GPIO pins
 PIN_RELAY = 23
 PIN_LED_OK = 24
 PIN_LED_FAIL = 25
 
-# Shared pause image base
-_PAUSE_IMG_BASE = None
-
 
 # =========================
-# UI Local Display
+# Display check
 # =========================
-def draw_local_ui(frame, bbox, name, sim, state, fps, dist_mm, sensor_present):
-    h, w = frame.shape[:2]
-    canvas = np.zeros((h, w, 3), dtype=np.uint8)
-
-    vid_h = int(h * 0.72)
-    vid_w = w
-    resized = cv2.resize(frame, (vid_w, vid_h))
-    canvas[:vid_h, :vid_w] = resized
-
-    if bbox:
-        x, y, bw, bh = bbox
-        sx = vid_w / frame.shape[1]
-        sy = vid_h / frame.shape[0]
-        color = {
-            "ok": (0, 220, 120),
-            "deny": (40, 40, 220),
-            "detecting": (0, 200, 255),
-        }.get(state, (180, 180, 180))
-
-        cv2.rectangle(
-            canvas,
-            (int(x * sx), int(y * sy)),
-            (int((x + bw) * sx), int((y + bh) * sy)),
-            color,
-            2,
-        )
-
-    color = {
-        "ok": (0, 220, 120),
-        "deny": (40, 40, 220),
-        "detecting": (0, 200, 255),
-        "idle": (180, 180, 180),
-    }.get(state, (180, 180, 180))
-
-    cv2.rectangle(canvas, (0, 0), (w, 44), (20, 20, 20), -1)
-
-    if state == "ok":
-        label = f"OK  {name}  sim={sim:.3f}"
-    elif state == "deny":
-        label = f"TU CHOI  sim={sim:.3f}"
-    elif state == "detecting":
-        label = "DANG NHAN DIEN..."
-    else:
-        label = "NHIN VAO CAMERA"
-
-    cv2.putText(
-        canvas,
-        label,
-        (12, 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.75,
-        color,
-        2,
-        cv2.LINE_AA,
-    )
-
-    clock = time.strftime("%H:%M:%S")
-    cv2.putText(
-        canvas,
-        clock,
-        (w - 130, 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.7,
-        (160, 160, 160),
-        1,
-    )
-
-    badge_text = "Co nguoi" if sensor_present else "Khong co nguoi"
-    badge_color = (0, 200, 100) if sensor_present else (100, 100, 100)
-    cv2.putText(
-        canvas,
-        badge_text,
-        (w - 220, vid_h - 10),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,
-        badge_color,
-        1,
-    )
-
-    dist_str = f"{dist_mm}mm" if dist_mm > 0 else "--"
-    cv2.putText(
-        canvas,
-        f"FPS:{fps:.1f}  dist:{dist_str}",
-        (10, vid_h - 10),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,
-        (120, 120, 120),
-        1,
-    )
-
-    panel_y = vid_h
-    panel_h = h - vid_h
-    cv2.rectangle(canvas, (0, panel_y), (w, h), (17, 17, 17), -1)
-    cv2.line(canvas, (0, panel_y), (w, panel_y), (40, 40, 40), 1)
-
-    def draw_card(x, y, cw, ch, label, value, val_color=(220, 220, 220)):
-        cv2.rectangle(canvas, (x + 3, y + 3), (x + cw - 3, y + ch - 3), (28, 28, 28), -1)
-        cv2.rectangle(canvas, (x + 3, y + 3), (x + cw - 3, y + ch - 3), (45, 45, 45), 1)
-
-        cv2.putText(
-            canvas,
-            label,
-            (x + 10, y + 22),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.38,
-            (100, 100, 100),
-            1,
-        )
-
-        cv2.putText(
-            canvas,
-            value,
-            (x + 10, y + ch - 12),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            val_color,
-            1,
-        )
-
-    cw = w // 4
-    ch = panel_h
-
-    state_color = {
-        "ok": (0, 220, 120),
-        "deny": (40, 40, 220),
-        "detecting": (0, 200, 255),
-        "idle": (100, 100, 100),
-    }.get(state, (180, 180, 180))
-
-    draw_card(0, panel_y, cw, ch, "TRANG THAI", state.upper(), state_color)
-    draw_card(cw, panel_y, cw, ch, "TEN NHAN DIEN", name or "--")
-
-    sim_str = f"{sim:.3f}" if sim > 0 else "--"
-    draw_card(cw * 2, panel_y, cw, ch, "SIMILARITY", sim_str)
-
-    draw_card(cw * 3, panel_y, cw, ch, "KHOANG CACH", dist_str)
-
-    return canvas
-
-
 def has_display() -> bool:
     if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
         try:
@@ -326,54 +171,6 @@ class DoorGPIO:
 
 
 # =========================
-# VL53L0X Sensor
-# =========================
-class VL53L0XSensor:
-    def __init__(self, detect_distance_mm: int = 500):
-        self.detect_distance_mm = detect_distance_mm
-        self._sensor = None
-        self._ok = False
-
-        try:
-            import board
-            import busio
-            import adafruit_vl53l0x
-
-            i2c = busio.I2C(board.SCL, board.SDA)
-            self._sensor = adafruit_vl53l0x.VL53L0X(i2c)
-            self._sensor.measurement_timing_budget = 200_000
-            self._ok = True
-
-            print(f"[INFO] VL53L0X ready, nguong={detect_distance_mm}mm")
-
-        except Exception as e:
-            print(f"[WARN] VL53L0X khong khoi dong duoc: {e}")
-            print("[WARN] Sensor loi -> PAUSE neu khong dung --no-sensor")
-
-    @property
-    def ok(self) -> bool:
-        return self._ok
-
-    def read_mm(self) -> int:
-        if not self._ok:
-            return -1
-
-        try:
-            return self._sensor.range
-        except Exception as e:
-            print(f"[WARN] VL53L0X doc loi: {e}")
-            return -1
-
-    def person_present(self) -> tuple[bool, int]:
-        mm = self.read_mm()
-
-        if mm < 0:
-            return False, -1
-
-        return mm <= self.detect_distance_mm, mm
-
-
-# =========================
 # MobileFaceNet
 # =========================
 class MobileFaceNet:
@@ -402,23 +199,20 @@ class MobileFaceNet:
 
     def embed(self, face_bgr):
         """
-        output_model.tflite Kaggle:
+        output_model.tflite:
             input  = [1, 112, 112, 3], float32
             output = [1, 128], float32
         """
 
         face = cv2.resize(face_bgr, (self.input_w, self.input_h))
 
-        # OpenCV dung BGR, model thuong train voi RGB
+        # OpenCV la BGR, model thuong train voi RGB
         face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
 
         if self.input_dtype == np.float32:
             face = face.astype(np.float32)
-
-            # Normalize MobileFaceNet thuong dung [-1, 1]
             face = (face - 127.5) / 128.0
         else:
-            # Neu sau nay ban dung model quantized uint8/int8
             face = face.astype(self.input_dtype)
 
         face = np.expand_dims(face, axis=0)
@@ -429,7 +223,6 @@ class MobileFaceNet:
         emb = self.interp.get_tensor(self.outp["index"])[0]
         emb = emb.astype(np.float32)
 
-        # L2 normalize de dot product thanh cosine similarity
         emb = emb / (np.linalg.norm(emb) + 1e-8)
 
         return emb
@@ -553,13 +346,15 @@ def load_database():
                 for e in value["embeddings"]
             ]
 
-    # Normalize lai database cho chac
+    # Normalize database
     for name in db:
         normalized = []
+
         for e in db[name]:
             e = e.astype(np.float32)
             e = e / (np.linalg.norm(e) + 1e-8)
             normalized.append(e)
+
         db[name] = normalized
 
     total = sum(len(v) for v in db.values())
@@ -625,7 +420,7 @@ def open_camera(args):
                     if rgb is None:
                         return False, None
 
-                    # Quan trong: doi RGB sang BGR cho OpenCV/YuNet/MobileFaceNet
+                    # Doi RGB sang BGR cho OpenCV
                     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
                     return True, bgr
@@ -653,7 +448,7 @@ def open_camera(args):
 # =========================
 # Overlay
 # =========================
-def draw_overlay(frame, bbox, name, sim, state, fps=0.0, dist_mm=-1):
+def draw_overlay(frame, bbox, name, sim, state, fps=0.0):
     color = {
         "idle": (180, 180, 180),
         "detecting": (0, 200, 255),
@@ -689,17 +484,143 @@ def draw_overlay(frame, bbox, name, sim, state, fps=0.0, dist_mm=-1):
         x, y, bw, bh = bbox
         cv2.rectangle(frame, (x, y), (x + bw, y + bh), color, 2)
 
-    dist_str = f"{dist_mm}mm" if dist_mm > 0 else "--"
-
     cv2.putText(
         frame,
-        f"FPS:{fps:.1f}  dist:{dist_str}",
+        f"FPS:{fps:.1f}",
         (10, h - 10),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.5,
         (160, 160, 160),
         1,
     )
+
+
+def draw_local_ui(frame, bbox, name, sim, state, fps):
+    h, w = frame.shape[:2]
+    canvas = np.zeros((h, w, 3), dtype=np.uint8)
+
+    vid_h = int(h * 0.72)
+    vid_w = w
+
+    resized = cv2.resize(frame, (vid_w, vid_h))
+    canvas[:vid_h, :vid_w] = resized
+
+    if bbox:
+        x, y, bw, bh = bbox
+        sx = vid_w / frame.shape[1]
+        sy = vid_h / frame.shape[0]
+
+        color = {
+            "ok": (0, 220, 120),
+            "deny": (40, 40, 220),
+            "detecting": (0, 200, 255),
+        }.get(state, (180, 180, 180))
+
+        cv2.rectangle(
+            canvas,
+            (int(x * sx), int(y * sy)),
+            (int((x + bw) * sx), int((y + bh) * sy)),
+            color,
+            2,
+        )
+
+    color = {
+        "ok": (0, 220, 120),
+        "deny": (40, 40, 220),
+        "detecting": (0, 200, 255),
+        "idle": (180, 180, 180),
+    }.get(state, (180, 180, 180))
+
+    cv2.rectangle(canvas, (0, 0), (w, 44), (20, 20, 20), -1)
+
+    if state == "ok":
+        label = f"OK  {name}  sim={sim:.3f}"
+    elif state == "deny":
+        label = f"TU CHOI  sim={sim:.3f}"
+    elif state == "detecting":
+        label = "DANG NHAN DIEN..."
+    else:
+        label = "NHIN VAO CAMERA"
+
+    cv2.putText(
+        canvas,
+        label,
+        (12, 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.75,
+        color,
+        2,
+        cv2.LINE_AA,
+    )
+
+    clock = time.strftime("%H:%M:%S")
+    cv2.putText(
+        canvas,
+        clock,
+        (w - 130, 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (160, 160, 160),
+        1,
+    )
+
+    cv2.putText(
+        canvas,
+        f"FPS:{fps:.1f}",
+        (10, vid_h - 10),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,
+        (120, 120, 120),
+        1,
+    )
+
+    panel_y = vid_h
+    panel_h = h - vid_h
+
+    cv2.rectangle(canvas, (0, panel_y), (w, h), (17, 17, 17), -1)
+    cv2.line(canvas, (0, panel_y), (w, panel_y), (40, 40, 40), 1)
+
+    def draw_card(x, y, cw, ch, label, value, val_color=(220, 220, 220)):
+        cv2.rectangle(canvas, (x + 3, y + 3), (x + cw - 3, y + ch - 3), (28, 28, 28), -1)
+        cv2.rectangle(canvas, (x + 3, y + 3), (x + cw - 3, y + ch - 3), (45, 45, 45), 1)
+
+        cv2.putText(
+            canvas,
+            label,
+            (x + 10, y + 22),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.38,
+            (100, 100, 100),
+            1,
+        )
+
+        cv2.putText(
+            canvas,
+            value,
+            (x + 10, y + ch - 12),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            val_color,
+            1,
+        )
+
+    cw = w // 3
+    ch = panel_h
+
+    state_color = {
+        "ok": (0, 220, 120),
+        "deny": (40, 40, 220),
+        "detecting": (0, 200, 255),
+        "idle": (100, 100, 100),
+    }.get(state, (180, 180, 180))
+
+    draw_card(0, panel_y, cw, ch, "TRANG THAI", state.upper(), state_color)
+    draw_card(cw, panel_y, cw, ch, "TEN NHAN DIEN", name or "--")
+
+    sim_str = f"{sim:.3f}" if sim > 0 else "--"
+    draw_card(cw * 2, panel_y, cw, ch, "SIMILARITY", sim_str)
+
+    return canvas
 
 
 # =========================
@@ -709,148 +630,19 @@ _lock = threading.Lock()
 _jpeg_frame = b""
 
 _shared = {
-    "paused": True,
     "state": "idle",
     "name": "",
     "sim": 0.0,
     "fps": 0.0,
-    "distance_mm": -1,
-    "sensor_present": False,
-    "sensor_ok": False,
     "last_log": None,
 }
-
-_PAUSE_FRAME: bytes = b""
-
-
-def _make_pause_frame(w: int, h: int, image_path: str = "image.png") -> bytes:
-    global _PAUSE_IMG_BASE
-
-    if image_path:
-        img_orig = cv2.imread(image_path)
-
-        if img_orig is not None:
-            logo_h = int(h * 0.55)
-            logo_w = int(logo_h * img_orig.shape[1] / img_orig.shape[0])
-            logo = cv2.resize(img_orig, (logo_w, logo_h))
-
-            canvas = np.full((h, w, 3), 240, dtype=np.uint8)
-
-            y0 = int(h * 0.04)
-            x0 = (w - logo_w) // 2
-
-            canvas[y0:y0 + logo_h, x0:x0 + logo_w] = logo
-            _PAUSE_IMG_BASE = canvas.copy()
-
-            _, buf = cv2.imencode(".jpg", canvas, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            return buf.tobytes()
-
-    img = np.full((h, w, 3), 240, dtype=np.uint8)
-    _PAUSE_IMG_BASE = img.copy()
-
-    _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 40])
-    return buf.tobytes()
-
-
-def _make_pause_frame_with_clock(w: int, h: int) -> np.ndarray:
-    global _PAUSE_IMG_BASE
-
-    if _PAUSE_IMG_BASE is not None:
-        img = _PAUSE_IMG_BASE.copy()
-    else:
-        img = np.full((h, w, 3), 240, dtype=np.uint8)
-
-    clock = time.strftime("%H:%M:%S")
-
-    day_names = [
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-    ]
-
-    t = time.localtime()
-    date = f"{day_names[t.tm_wday]},  {t.tm_mday:02d}/{t.tm_mon:02d}/{t.tm_year}"
-
-    font = cv2.FONT_HERSHEY_SIMPLEX
-
-    logo_zone_bottom = int(h * 0.62)
-
-    clock_scale = w / 640 * 2.2
-    date_scale = w / 640 * 0.75
-
-    (cw, ch), _ = cv2.getTextSize(clock, font, clock_scale, 3)
-    (dw, dh), _ = cv2.getTextSize(date, font, date_scale, 2)
-
-    cx_clock = (w - cw) // 2
-    cy_clock = logo_zone_bottom + ch + int(h * 0.04)
-
-    cx_date = (w - dw) // 2
-    cy_date = cy_clock + int(h * 0.07)
-
-    cv2.putText(img, clock, (cx_clock, cy_clock), font, clock_scale, (0, 0, 0), 8, cv2.LINE_AA)
-    cv2.putText(img, clock, (cx_clock, cy_clock), font, clock_scale, (30, 30, 30), 3, cv2.LINE_AA)
-
-    cv2.putText(img, date, (cx_date, cy_date), font, date_scale, (0, 0, 0), 5, cv2.LINE_AA)
-    cv2.putText(img, date, (cx_date, cy_date), font, date_scale, (100, 100, 200), 2, cv2.LINE_AA)
-
-    return img
-
-
-# =========================
-# Sensor thread
-# =========================
-def sensor_loop(sensor, no_sensor: bool, hold_time: float, poll_interval: float):
-    global _shared
-
-    last_present_time = 0.0
-
-    print(f"[SENSOR] Loop start. no_sensor={no_sensor} hold={hold_time}s poll={poll_interval}s")
-
-    while True:
-        now = time.time()
-
-        if no_sensor or sensor is None:
-            present, mm = True, -1
-        else:
-            present, mm = sensor.person_present()
-
-        if present:
-            last_present_time = now
-
-        effective_present = (now - last_present_time) < hold_time
-
-        with _lock:
-            was_paused = _shared["paused"]
-
-            _shared["paused"] = not effective_present
-            _shared["sensor_present"] = present
-            _shared["sensor_ok"] = (sensor is not None and sensor.ok) or no_sensor
-            _shared["distance_mm"] = mm
-
-        if was_paused and effective_present:
-            print(f"[SENSOR] Co nguoi ({mm}mm) -> RESUME")
-            with _lock:
-                _shared["last_log"] = f"[SENSOR] Phat hien nguoi {mm}mm -> resume"
-
-        elif not was_paused and not effective_present:
-            print("[SENSOR] Khong co nguoi -> PAUSE")
-            with _lock:
-                _shared["last_log"] = "[SENSOR] Khong co nguoi -> pause"
-
-        time.sleep(poll_interval)
 
 
 # =========================
 # Inference thread
 # =========================
 def inference_loop(args):
-    global _jpeg_frame, _shared, _PAUSE_FRAME
-
-    _PAUSE_FRAME = _make_pause_frame(args.width, args.height, args.pause_image)
+    global _jpeg_frame, _shared
 
     gpio = DoorGPIO(enabled=not args.no_gpio)
     detector = YuNetDetector(score_threshold=args.score_threshold)
@@ -887,43 +679,12 @@ def inference_loop(args):
         print("[INFO] Local display fullscreen")
 
     while True:
-        with _lock:
-            paused = _shared["paused"]
-            dist_mm = _shared["distance_mm"]
-
-        if paused:
-            if USE_LOCAL_DISPLAY:
-                pause_img = _make_pause_frame_with_clock(args.width, args.height)
-                cv2.imshow("FaceLog", pause_img)
-                cv2.waitKey(200)
-            else:
-                with _lock:
-                    _jpeg_frame = _PAUSE_FRAME
-                    _shared["fps"] = 0.0
-                    _shared["state"] = "idle"
-                    _shared["name"] = ""
-                    _shared["sim"] = 0.0
-
-                time.sleep(0.2)
-
-            state = "idle"
-            show_name = None
-            show_bbox = None
-            show_sim = 0.0
-            last_verify = 0.0
-
-            fps_t0 = time.time()
-            fps_count = 0
-
-            continue
-
         ret, frame = cap.read()
 
         if not ret or frame is None:
             time.sleep(0.02)
             continue
 
-        # Mirror camera
         frame = cv2.flip(frame, 1)
 
         frame_count += 1
@@ -989,9 +750,6 @@ def inference_loop(args):
                 show_bbox = None
 
         if USE_LOCAL_DISPLAY:
-            with _lock:
-                sensor_present = _shared["sensor_present"]
-
             ui = draw_local_ui(
                 frame,
                 show_bbox,
@@ -999,8 +757,6 @@ def inference_loop(args):
                 show_sim,
                 state,
                 fps_display,
-                dist_mm,
-                sensor_present,
             )
 
             cv2.imshow("FaceLog", ui)
@@ -1009,24 +765,30 @@ def inference_loop(args):
                 break
 
         else:
-            draw_overlay(frame, show_bbox, show_name, show_sim, state, fps_display, dist_mm)
+            draw_overlay(
+                frame,
+                show_bbox,
+                show_name,
+                show_sim,
+                state,
+                fps_display,
+            )
 
             ok, buf = cv2.imencode(".jpg", frame, encode_param)
 
             if ok:
                 with _lock:
-                    if not _shared["paused"]:
-                        _jpeg_frame = buf.tobytes()
+                    _jpeg_frame = buf.tobytes()
 
-                        _shared.update(
-                            {
-                                "state": state,
-                                "name": show_name or "",
-                                "sim": round(show_sim, 4),
-                                "fps": round(fps_display, 1),
-                                "last_log": new_log,
-                            }
-                        )
+                    _shared.update(
+                        {
+                            "state": state,
+                            "name": show_name or "",
+                            "sim": round(show_sim, 4),
+                            "fps": round(fps_display, 1),
+                            "last_log": new_log,
+                        }
+                    )
 
     cap.release()
     gpio.close()
@@ -1148,11 +910,6 @@ def main():
     p.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
 
     p.add_argument("--no-gpio", action="store_true")
-    p.add_argument(
-        "--no-sensor",
-        action="store_true",
-        help="Tat VL53L0X, chay lien tuc de test",
-    )
 
     p.add_argument("--unlock-duration", type=float, default=5.0)
     p.add_argument("--cooldown", type=float, default=2.0)
@@ -1165,47 +922,7 @@ def main():
     p.add_argument("--port", type=int, default=5000)
     p.add_argument("--host", default="0.0.0.0")
 
-    p.add_argument(
-        "--detect-distance",
-        type=int,
-        default=500,
-        help="Nguong khoang cach co nguoi, mm",
-    )
-
-    p.add_argument(
-        "--sensor-hold",
-        type=float,
-        default=5.0,
-        help="Giu trang thai co nguoi them N giay sau khi roi khoi nguong",
-    )
-
-    p.add_argument(
-        "--sensor-poll",
-        type=float,
-        default=0.15,
-        help="Chu ky polling sensor, giay",
-    )
-
-    p.add_argument(
-        "--pause-image",
-        default="image.png",
-        help="Anh hien thi khi pause, jpg/png",
-    )
-
     args = p.parse_args()
-
-    if args.no_sensor:
-        sensor = None
-        print("[INFO] --no-sensor: bo qua VL53L0X, chay lien tuc")
-    else:
-        sensor = VL53L0XSensor(detect_distance_mm=args.detect_distance)
-
-    ts = threading.Thread(
-        target=sensor_loop,
-        args=(sensor, args.no_sensor, args.sensor_hold, args.sensor_poll),
-        daemon=True,
-    )
-    ts.start()
 
     if USE_LOCAL_DISPLAY:
         print("[INFO] Co man hinh -> Local display mode")
