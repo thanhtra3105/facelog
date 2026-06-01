@@ -59,7 +59,7 @@ DB_PATH = BASE_DIR / "face_database.json"
 YUNET_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
 YUNET_PATH = BASE_DIR / "face_detection_yunet_2023mar.onnx"
 
-DEFAULT_THRESHOLD = 0.55
+DEFAULT_THRESHOLD = 0.8
 
 PIN_RELAY = 23
 PIN_LED_OK = 24
@@ -421,9 +421,9 @@ def open_camera(args):
                         return False, None
 
                     # Doi RGB sang BGR cho OpenCV
-                    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+                    # bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
-                    return True, bgr
+                    return True, rgb
 
                 def release(self):
                     self.picam2.stop()

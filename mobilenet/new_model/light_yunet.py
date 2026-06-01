@@ -359,8 +359,8 @@ def open_camera(args):
                     if rgb is None:
                         return False, None
 
-                    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-                    return True, bgr
+                    # bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+                    return True, rgb
 
                 def release(self):
                     try:
