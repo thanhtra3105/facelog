@@ -206,8 +206,9 @@ class DoorGPIO:
 # VL53L0X Sensor
 # =========================
 class VL53L0XSensor:
-    def __init__(self, detect_distance_mm: int = 500):
-        self.detect_distance_mm = detect_distance_mm
+    def __init__(self, min_distance_mm: int = 500, max_distance_mm: int = 1500):
+        self.min_distance_mm = min_distance_mm
+        self.max_distance_mm = max_distance_mm
         self._sensor = None
         self._ok = False
 
@@ -221,7 +222,9 @@ class VL53L0XSensor:
             self._sensor.measurement_timing_budget = 200_000
             self._ok = True
 
-            print(f"[INFO] VL53L0X ready, threshold={detect_distance_mm}mm")
+            print(
+                f"[INFO] VL53L0X ready, range={min_distance_mm}-{max_distance_mm}mm"
+            )
 
         except Exception as e:
             print(f"[WARN] VL53L0X khoi dong loi: {e}")
@@ -247,8 +250,9 @@ class VL53L0XSensor:
         if mm < 0:
             return False, -1
 
-        return mm <= self.detect_distance_mm, mm
+        present = self.min_distance_mm <= mm <= self.max_distance_mm
 
+        return present, mm
 
 def sensor_loop(sensor, no_sensor: bool, hold_time: float, poll_interval: float):
     global _shared
@@ -892,7 +896,9 @@ def main():
     p.add_argument("--no-gpio", action="store_true")
     p.add_argument("--no-sensor", action="store_true")
 
-    p.add_argument("--detect-distance", type=int, default=500)
+    p.add_argument("--detect-min-distance", type=int, default=100)
+    p.add_argument("--detect-max-distance", type=int, default=1200)
+
     p.add_argument("--sensor-hold", type=float, default=5.0)
     p.add_argument("--sensor-poll", type=float, default=0.15)
 
@@ -923,8 +929,10 @@ def main():
         sensor = None
         print("[INFO] --no-sensor: chay lien tuc")
     else:
-        sensor = VL53L0XSensor(detect_distance_mm=args.detect_distance)
-
+        sensor = VL53L0XSensor(
+            min_distance_mm=args.detect_min_distance,
+            max_distance_mm=args.detect_max_distance,
+        )
     threading.Thread(
         target=sensor_loop,
         args=(sensor, args.no_sensor, args.sensor_hold, args.sensor_poll),
