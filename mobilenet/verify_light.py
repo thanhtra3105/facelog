@@ -35,8 +35,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from flask import Flask, Response, jsonify
-
+from flask import Flask, Response, jsonify, render_template
 
 # =========================
 # TFLite Interpreter
@@ -838,56 +837,10 @@ def inference_loop(args):
 # =========================
 # Flask
 # =========================
+
 @app.route("/")
 def index():
-    return """
-<!doctype html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Verify Light</title>
-    <style>
-        body {
-            margin: 0;
-            background: #111;
-            color: #eee;
-            font-family: Arial, sans-serif;
-            text-align: center;
-        }
-        img {
-            width: 100vw;
-            max-width: 800px;
-        }
-        pre {
-            display: inline-block;
-            text-align: left;
-            background: #222;
-            padding: 8px;
-            border-radius: 6px;
-            font-size: 13px;
-        }
-    </style>
-</head>
-<body>
-    <img src="/video_feed">
-    <br>
-    <pre id="s">loading...</pre>
-
-    <script>
-        async function update() {
-            try {
-                const r = await fetch('/status');
-                const j = await r.json();
-                document.getElementById('s').textContent = JSON.stringify(j, null, 2);
-            } catch(e) {}
-        }
-        setInterval(update, 1000);
-        update();
-    </script>
-</body>
-</html>
-"""
-
+    return render_template("ui.html")
 
 @app.route("/video_feed")
 def video_feed():

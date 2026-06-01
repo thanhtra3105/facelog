@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html class="light" lang="vi">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Geist:wght@600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
+
+<title>Facelog</title>
+
+<style>
+body {
+    margin: 0;
+    background: #f7f9fb;
+    color: #191c1e;
+    font-family: Inter, Arial, sans-serif;
+}
+
+.material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.loading-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.8;
+        transform: scale(0.98);
+    }
+}
+
+.face-scanner-overlay {
+    position: relative;
+}
+
+.face-scanner-overlay::before {
+    content: '';
+    position: absolute;
+    top: -20px;
+    left: -20px;
+    right: -20px;
+    bottom: -20px;
+    border: 2px solid #e0e3e5;
+    border-radius: 2rem;
+    z-index: -1;
+}
+
+#video-screen {
+    display: none;
+}
+
+#video-feed {
+    display: block;
+}
+
+#status-box {
+    white-space: pre-wrap;
+}
+
+.video-card {
+    background: #111;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #d8dadc;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+
+@media (max-width: 768px) {
+    header {
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+    }
+
+    main {
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+    }
+
+    footer {
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+    }
+
+    #video-screen {
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<!-- WAIT SCREEN -->
+<div id="wait-screen" class="min-h-screen flex flex-col">
+
+<header class="w-full top-0 sticky bg-[#f7f9fb] flex justify-between items-center px-16 py-4 z-10">
+    <div class="text-2xl font-bold text-black" style="font-family: Geist, Arial;">Facelog</div>
+
+    <div class="flex items-center gap-6">
+        <div class="p-2 rounded hover:bg-[#f2f4f6]">
+            <span class="material-symbols-outlined text-[#45464d]">help</span>
+        </div>
+
+        <div class="p-2 rounded hover:bg-[#f2f4f6]">
+            <span class="material-symbols-outlined text-[#45464d]">settings</span>
+        </div>
+    </div>
+</header>
+
+<main class="flex-grow flex flex-col items-center justify-center px-16 relative overflow-hidden">
+    <div class="absolute inset-0 bg-gradient-to-b from-white to-[#f7f9fb] opacity-50 -z-10"></div>
+
+    <div class="flex flex-col items-center text-center space-y-8 max-w-2xl">
+        <div class="relative group">
+            <div class="absolute -inset-4 bg-blue-500/5 rounded-full blur-3xl"></div>
+
+            <div class="relative w-48 h-48 md:w-64 md:h-64 flex items-center justify-center face-scanner-overlay">
+                <img
+                    alt="Facelog Character"
+                    class="w-full h-full object-contain loading-pulse transition-all duration-500 ease-in-out"
+                    src="/static/facebot.png"
+                />
+            </div>
+        </div>
+
+        <div class="space-y-2 pt-4">
+            <h1 class="text-5xl font-bold text-black tracking-tight" id="clock">00:00 AM</h1>
+            <p class="text-sm text-[#45464d] tracking-widest uppercase" id="date">Monday, January 01, 2024</p>
+        </div>
+
+        <div class="mt-8 flex items-center gap-4 bg-white px-8 py-4 border border-[#c6c6cd] rounded-full shadow-sm">
+            <span class="material-symbols-outlined text-blue-600 animate-spin">sync</span>
+            <span class="text-sm text-[#191c1e] font-medium">Đang chờ nhận diện khuôn mặt...</span>
+        </div>
+    </div>
+</main>
+
+<footer class="w-full px-16 py-8 border-t border-[#c6c6cd] bg-white">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+        <div class="flex flex-wrap justify-center gap-6">
+
+            <div class="flex flex-col items-start gap-1">
+                <span class="text-xs text-[#45464d] uppercase opacity-70">Trạng thái</span>
+                <div class="flex items-center gap-2">
+                    <div id="status-dot" class="w-2 h-2 rounded-full bg-emerald-500"></div>
+                    <span id="system-status-text" class="text-sm text-black">Sẵn sàng</span>
+                </div>
+            </div>
+
+            <div class="hidden md:block w-px h-8 bg-[#c6c6cd] self-center"></div>
+
+            <div class="flex flex-col items-start gap-1">
+                <span class="text-xs text-[#45464d] uppercase opacity-70">Mã thiết bị</span>
+                <span class="text-sm text-black">FL-HQ-NODE-081</span>
+            </div>
+
+            <div class="hidden md:block w-px h-8 bg-[#c6c6cd] self-center"></div>
+
+            <div class="flex flex-col items-start gap-1">
+                <span class="text-xs text-[#45464d] uppercase opacity-70">Cảm biến</span>
+                <span class="text-sm text-black" id="sensor-text">Đang chờ</span>
+            </div>
+        </div>
+
+        <div class="text-[#45464d] text-xs">
+            Powered by Facelog Biometrics Engine
+        </div>
+    </div>
+</footer>
+
+</div>
+
+<!-- VIDEO DASHBOARD SCREEN -->
+<div id="video-screen" class="min-h-screen bg-white text-[#191c1e] px-6 py-4">
+    <div class="max-w-[980px] mx-auto">
+
+        <!-- Top status row -->
+        <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2 text-sm">
+                <span id="camera-dot" class="w-2 h-2 rounded-full bg-red-500 inline-block"></span>
+                <span class="font-medium">Máy ảnh 01:</span>
+                <span id="camera-status-text" class="text-[#45464d]">Sẵn sàng</span>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <span class="px-3 py-1 rounded-full bg-[#f2f4f6] text-xs font-mono">
+                    FPS: <b id="fps-text">--</b>
+                </span>
+                <span class="px-3 py-1 rounded-full bg-[#f2f4f6] text-xs font-mono">
+                    LATENCY: <b id="latency-text" class="text-emerald-600">--ms</b>
+                </span>
+            </div>
+        </div>
+
+        <!-- Video panel -->
+        <div class="relative w-full video-card bg-black">
+            <img
+                id="video-feed"
+                src="/video_feed"
+                class="w-full h-[420px] object-contain bg-black"
+                alt="Camera Stream"
+            />
+
+            <!-- Bottom left time overlay -->
+            <div class="absolute left-4 bottom-4 bg-black/80 text-white px-4 py-3 rounded-sm">
+                <div class="text-xs text-white/70">Thời gian hệ thống</div>
+                <div id="video-clock" class="font-mono text-xl font-bold">--:--:--</div>
+            </div>
+
+            <!-- Bottom right raw status mini -->
+            <pre
+                id="status-box"
+                class="absolute right-4 bottom-4 max-w-[180px] max-h-[120px] overflow-hidden bg-black/70 text-white text-[10px] p-2 rounded-sm text-left"
+            >loading...</pre>
+
+            <!-- Fullscreen button -->
+            <button
+                id="fullscreen-btn"
+                class="absolute right-4 top-4 w-9 h-9 rounded bg-black/60 flex items-center justify-center text-white hover:bg-black/80"
+                type="button"
+            >
+                <span class="material-symbols-outlined text-[22px]">fullscreen</span>
+            </button>
+        </div>
+
+        <!-- Info cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mt-6">
+
+            <!-- Name card -->
+            <div class="border border-[#d8dadc] rounded-lg bg-white p-6 flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-[#d8e2ff] flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[#001a42]">face</span>
+                </div>
+
+                <div>
+                    <div class="text-xs tracking-widest text-[#45464d] uppercase mb-1">Tên</div>
+                    <div id="name-text" class="text-xl font-bold text-black">
+                        Đang nhận diện<span class="text-blue-600">...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Confidence card -->
+            <div class="border border-[#d8dadc] rounded-lg bg-white p-6 flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-emerald-300 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[#002113]">verified_user</span>
+                </div>
+
+                <div>
+                    <div class="text-xs tracking-widest text-[#45464d] uppercase mb-1">Độ tin cậy</div>
+                    <div id="confidence-text" class="text-xl font-bold text-black">--%</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-6">
+
+            <!-- System log -->
+            <div class="md:col-span-2 border border-[#d8dadc] rounded-lg bg-[#f7f9fb] p-6 min-h-[210px]">
+                <div class="flex justify-between items-center mb-5">
+                    <div class="text-sm font-medium">Nhật ký hệ thống</div>
+                    <button class="text-xs text-blue-600 font-medium" type="button">Xem tất cả</button>
+                </div>
+
+                <div id="log-list" class="space-y-4 text-sm">
+                    <div class="flex items-center justify-between border-b border-[#e0e3e5] pb-3">
+                        <div>
+                            <span class="font-mono text-xs mr-4">--:--:--</span>
+                            <span>Hệ thống khởi động luồng stream #1</span>
+                        </div>
+                        <span class="material-symbols-outlined text-emerald-600 text-[18px]">check_circle</span>
+                    </div>
+
+                    <div class="flex items-center justify-between border-b border-[#e0e3e5] pb-3">
+                        <div>
+                            <span class="font-mono text-xs mr-4">--:--:--</span>
+                            <span>Kết nối camera thành công</span>
+                        </div>
+                        <span class="material-symbols-outlined text-emerald-600 text-[18px]">check_circle</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security card -->
+            <div class="border border-[#d8dadc] rounded-lg bg-[#f7f9fb] p-6 flex flex-col items-center justify-center text-center min-h-[210px]">
+                <div class="w-14 h-14 rounded-lg bg-[#d8e2ff] flex items-center justify-center mb-4">
+                    <span class="material-symbols-outlined text-blue-600 text-[32px]">shield</span>
+                </div>
+
+                <div class="font-medium mb-1">Trạng thái Bảo mật</div>
+                <div class="text-sm text-[#45464d] mb-6">
+                    Tất cả các nút đều an toàn và hoạt động bình thường.
+                </div>
+
+                <button class="w-full bg-black text-white py-3 rounded-sm font-bold" type="button">
+                    Kiểm tra nhanh
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let lastLogText = "";
+
+function updateDateTime() {
+    const now = new Date();
+
+    let hours = now.getHours();
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+
+    const clock = document.getElementById('clock');
+    const date = document.getElementById('date');
+    const videoClock = document.getElementById('video-clock');
+
+    if (clock) {
+        clock.textContent = hours + ':' + minutes + ' ' + ampm;
+    }
+
+    if (date) {
+        const options = {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        };
+
+        date.textContent = now.toLocaleDateString('vi-VN', options);
+    }
+
+    if (videoClock) {
+        videoClock.textContent = now.toLocaleTimeString('vi-VN', { hour12: false });
+    }
+}
+
+function addLog(text, type = "ok") {
+    if (!text || text === lastLogText) {
+        return;
+    }
+
+    lastLogText = text;
+
+    const logList = document.getElementById('log-list');
+
+    if (!logList) {
+        return;
+    }
+
+    const now = new Date();
+    const t = now.toLocaleTimeString('vi-VN', { hour12: false });
+
+    const iconColor = type === "deny" ? "text-red-600" : "text-emerald-600";
+    const iconName = type === "deny" ? "cancel" : "check_circle";
+
+    const item = document.createElement('div');
+    item.className = 'flex items-center justify-between border-b border-[#e0e3e5] pb-3';
+
+    item.innerHTML = `
+        <div>
+            <span class="font-mono text-xs mr-4">${t}</span>
+            <span>${text}</span>
+        </div>
+        <span class="material-symbols-outlined ${iconColor} text-[18px]">${iconName}</span>
+    `;
+
+    logList.prepend(item);
+
+    while (logList.children.length > 5) {
+        logList.removeChild(logList.lastChild);
+    }
+}
+
+function setSystemVisual(state, paused) {
+    const systemStatusText = document.getElementById('system-status-text');
+    const statusDot = document.getElementById('status-dot');
+    const cameraStatusText = document.getElementById('camera-status-text');
+    const cameraDot = document.getElementById('camera-dot');
+
+    if (systemStatusText) {
+        if (paused) {
+            systemStatusText.textContent = 'Sẵn sàng';
+        } else if (state === 'ok') {
+            systemStatusText.textContent = 'Đã nhận diện';
+        } else if (state === 'deny') {
+            systemStatusText.textContent = 'Từ chối';
+        } else if (state === 'detecting') {
+            systemStatusText.textContent = 'Đang xử lý';
+        } else {
+            systemStatusText.textContent = 'Đang hoạt động';
+        }
+    }
+
+    if (statusDot) {
+        if (paused || state === 'ok') {
+            statusDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+        } else if (state === 'deny') {
+            statusDot.className = 'w-2 h-2 rounded-full bg-red-500';
+        } else {
+            statusDot.className = 'w-2 h-2 rounded-full bg-blue-500';
+        }
+    }
+
+    if (cameraStatusText) {
+        cameraStatusText.textContent = paused ? 'Tạm dừng' : 'Đang hoạt động';
+    }
+
+    if (cameraDot) {
+        cameraDot.className = paused
+            ? 'w-2 h-2 rounded-full bg-gray-400 inline-block'
+            : 'w-2 h-2 rounded-full bg-red-500 inline-block';
+    }
+}
+
+function setRecognitionInfo(s) {
+    const nameText = document.getElementById('name-text');
+    const confidenceText = document.getElementById('confidence-text');
+    const fpsText = document.getElementById('fps-text');
+    const latencyText = document.getElementById('latency-text');
+    const sensorText = document.getElementById('sensor-text');
+    const statusBox = document.getElementById('status-box');
+
+    if (statusBox) {
+        statusBox.textContent = JSON.stringify(s, null, 2);
+    }
+
+    if (fpsText) {
+        fpsText.textContent = s.fps ?? '--';
+    }
+
+    if (latencyText) {
+        latencyText.textContent = '12ms';
+    }
+
+    if (sensorText) {
+        sensorText.textContent = s.sensor_present ? 'Có người' : 'Không có người';
+    }
+
+    if (nameText) {
+        if (s.state === 'ok' && s.name) {
+            nameText.textContent = s.name;
+        } else if (s.state === 'deny') {
+            nameText.textContent = 'Không xác định';
+        } else {
+            nameText.innerHTML = 'Đang nhận diện<span class="text-blue-600">...</span>';
+        }
+    }
+
+    if (confidenceText) {
+        if (s.sim && s.sim > 0) {
+            confidenceText.textContent = Math.round(s.sim * 100) + '%';
+        } else {
+            confidenceText.textContent = '--%';
+        }
+    }
+}
+
+async function updateStatus() {
+    try {
+        const r = await fetch('/status');
+        const s = await r.json();
+
+        const waitScreen = document.getElementById('wait-screen');
+        const videoScreen = document.getElementById('video-screen');
+
+        setSystemVisual(s.state, s.paused);
+        setRecognitionInfo(s);
+
+        if (s.last_log) {
+            addLog(s.last_log, s.state === 'deny' ? 'deny' : 'ok');
+        }
+
+        if (s.paused) {
+            waitScreen.style.display = 'flex';
+            videoScreen.style.display = 'none';
+        } else {
+            waitScreen.style.display = 'none';
+            videoScreen.style.display = 'block';
+        }
+
+    } catch (e) {
+        console.log(e);
+    }
+}
+
+const fullscreenBtn = document.getElementById('fullscreen-btn');
+if (fullscreenBtn) {
+    fullscreenBtn.addEventListener('click', () => {
+        const videoPanel = document.querySelector('.video-card');
+
+        if (videoPanel && videoPanel.requestFullscreen) {
+            videoPanel.requestFullscreen();
+        }
+    });
+}
+
+updateDateTime();
+setInterval(updateDateTime, 1000);
+
+updateStatus();
+setInterval(updateStatus, 1000);
+</script>
+
+</body>
+</html>
