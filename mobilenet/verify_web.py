@@ -535,6 +535,8 @@ def inference_loop(args):
         cv2.moveWindow("FaceLog", 0, 0)
         cv2.setWindowProperty("FaceLog", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         print("[INFO] Local display fullscreen")
+    yunet_times = []
+    embed_times = []
     while True:
         # ── Đọc trạng thái pause từ sensor_loop ──
         with _lock:
@@ -583,11 +585,27 @@ def inference_loop(args):
 
         if frame_count % infer_every == 0 and now - last_verify >= args.cooldown:
             state = "detecting"
-            face = detector.largest(detector.detect(frame))
+
+            t0 = time.perf_counter()
+            faces = detector.detect(frame)
+            yunet_ms = (time.perf_counter() - t0) * 1000
+            yunet_times.append(yunet_ms)
+
+            face = detector.largest(faces)
             if face is not None:
                 crop = detector.crop(frame, face)
                 if crop is not None:
+
+                    t1 = time.perf_counter()
                     emb = embedder.embed(crop)
+                    embed_ms = (time.perf_counter() - t1) * 1000
+                    embed_times.append(embed_ms)
+
+                    if len(embed_times) % 20 == 0:
+                        print(f"[TIMING] YuNet avg={sum(yunet_times)/len(yunet_times):.1f}ms  "
+                              f"MobileFaceNet avg={sum(embed_times)/len(embed_times):.1f}ms  "
+                              f"(n={len(embed_times)})")
+
                     name, sim = recognize(emb, db, args.threshold)
                     show_bbox = face["box"]; show_sim = sim
                     if name:
@@ -678,7 +696,7 @@ def main():
     p.add_argument("--jpeg-quality",     type=int,   default=70)
     p.add_argument("--port",             type=int,   default=5000)
     p.add_argument("--host",             default="0.0.0.0")
-    p.add_argument("--detect-distance",  type=int,   default=500,
+    p.add_argument("--detect-distance",  type=int,   default=1000,
                    help="Nguong khoang cach co nguoi (mm), mac dinh 500mm = 50cm")
     p.add_argument("--sensor-hold",      type=float, default=5.0,
                    help="Giu trang thai co nguoi them N giay sau khi roi khoi nguong")
