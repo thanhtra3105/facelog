@@ -67,7 +67,7 @@ YUNET_PATH = BASE_DIR / "face_detection_yunet_2023mar.onnx"
 EXPECTED_EMB_DIM = 128
 
 # Model moi nen test tu 0.55 -> 0.80
-DEFAULT_THRESHOLD = 0.8
+DEFAULT_THRESHOLD = 0.85
 
 PIN_RELAY = 23
 PIN_LED_OK = 24
@@ -799,13 +799,13 @@ def inference_loop(args):
             state = "detecting"
 
             t0 = time.perf_counter()
-            face = detector.detect_largest(frame_bgr)
+            face = detector.detect_largest(frame_rgb)
             yunet_ms = (time.perf_counter() - t0) * 1000.0
 
             embed_ms = 0.0
 
             if face is not None:
-                crop = detector.crop(frame_bgr, face)
+                crop = detector.crop(frame_rgb, face)
 
                 if crop is not None:
                     t1 = time.perf_counter()
@@ -866,7 +866,7 @@ def inference_loop(args):
 
         if args.draw:
             draw_overlay(
-                frame_bgr,
+                frame_rgb,
                 show_bbox,
                 show_name,
                 show_sim,
@@ -876,8 +876,8 @@ def inference_loop(args):
             )
 
         # Encode stream.
-        # OpenCV imencode nhan BGR. Dung frame_bgr de mau dung voi OpenCV.
-        ok, buf = cv2.imencode(".jpg", frame_bgr, encode_param)
+        # OpenCV imencode nhan BGR. Dung frame_rgb de mau dung voi OpenCV.
+        ok, buf = cv2.imencode(".jpg", frame_rgb, encode_param)
 
         if ok:
             with _lock:

@@ -57,7 +57,7 @@ except ImportError:
 BASE_DIR = Path(__file__).resolve().parent
 
 MODEL_PATH = BASE_DIR / "output_model.tflite"
-DB_PATH = BASE_DIR / "face_database.json"
+DB_PATH = BASE_DIR / "face_database_new_model.json"
 
 YUNET_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
 YUNET_PATH = BASE_DIR / "face_detection_yunet_2023mar.onnx"

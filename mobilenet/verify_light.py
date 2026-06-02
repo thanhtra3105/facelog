@@ -27,6 +27,7 @@ Mo browser:
 """
 
 import argparse
+import csv
 import json
 import threading
 import time
@@ -74,6 +75,7 @@ PIN_RELAY = 23
 PIN_LED_OK = 24
 PIN_LED_FAIL = 25
 
+RESULT_LOG_PATH = BASE_DIR / "result_old_model.csv"
 
 # =========================
 # Shared state
@@ -108,6 +110,38 @@ def ensure_yunet(path: Path):
     urllib.request.urlretrieve(YUNET_URL, str(path))
     print(f"[INFO] YuNet downloaded: {path.stat().st_size // 1024} KB")
 
+def append_result_log(row: dict):
+    """
+    Ghi log ket qua nhan dien cua model cu de so sanh voi model moi.
+    File output: result_old_model.csv
+    """
+    file_exists = RESULT_LOG_PATH.exists()
+
+    fieldnames = [
+        "time",
+        "model",
+        "state",
+        "name",
+        "similarity",
+        "threshold",
+        "fps",
+        "distance_mm",
+        "infer_ms",
+        "yunet_ms",
+        "embed_ms",
+    ]
+
+    try:
+        with open(RESULT_LOG_PATH, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+
+            if not file_exists:
+                writer.writeheader()
+
+            writer.writerow(row)
+
+    except Exception as e:
+        print(f"[WARN] Khong ghi duoc result log: {e}")
 
 def create_pause_jpeg(width: int, height: int, text: str = "WAITING") -> bytes:
     img = np.full((height, width, 3), 25, dtype=np.uint8)
@@ -762,19 +796,31 @@ def inference_loop(args):
             do_infer = False
 
         if do_infer:
+            t_all0 = time.perf_counter()
+
             state = "detecting"
 
+            t0 = time.perf_counter()
             face = detector.detect_largest(frame)
+            yunet_ms = (time.perf_counter() - t0) * 1000.0
+
+            embed_ms = 0.0
+            infer_ms = 0.0
 
             if face is not None:
                 crop = detector.crop(frame, face)
 
                 if crop is not None:
+                    t1 = time.perf_counter()
                     emb = embedder.embed(crop)
+                    embed_ms = (time.perf_counter() - t1) * 1000.0
+
                     name, sim = recognize(emb, db, args.threshold)
 
                     show_bbox = face["box"]
                     show_sim = sim
+
+                    infer_ms = (time.perf_counter() - t_all0) * 1000.0
 
                     if name:
                         state = "ok"
@@ -782,7 +828,7 @@ def inference_loop(args):
                         show_until = now + args.unlock_duration + 0.5
                         last_verify = now
 
-                        msg = f"[OK] {time.strftime('%H:%M:%S')} {name} sim={sim:.3f}"
+                        msg = f"[OK][OLD] {time.strftime('%H:%M:%S')} {name} sim={sim:.3f}"
                         print(msg)
                         new_log = msg
 
@@ -794,12 +840,28 @@ def inference_loop(args):
                         show_until = now + args.deny_show_time
                         last_verify = now
 
-                        msg = f"[DENY] {time.strftime('%H:%M:%S')} sim={sim:.3f}"
+                        msg = f"[DENY][OLD] {time.strftime('%H:%M:%S')} sim={sim:.3f}"
                         print(msg)
                         new_log = msg
 
                         if args.blink_deny:
                             gpio.deny()
+
+                    append_result_log(
+                        {
+                            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "model": "old_mobilefacenet",
+                            "state": state,
+                            "name": show_name or "",
+                            "similarity": round(float(show_sim), 5),
+                            "threshold": args.threshold,
+                            "fps": round(float(fps_display), 2),
+                            "distance_mm": dist_mm,
+                            "infer_ms": round(float(infer_ms), 3),
+                            "yunet_ms": round(float(yunet_ms), 3),
+                            "embed_ms": round(float(embed_ms), 3),
+                        }
+                    )
 
             else:
                 state = "idle"
